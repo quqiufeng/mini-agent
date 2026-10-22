@@ -8,22 +8,24 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 [ $# -ge 1 ] || { echo "用法: $0 \"关键词\" [count]" >&2; exit 2; }
 QUERY="$1"
 COUNT="${2:-10}"
+PORT="${CDP_PORT:-9222}"
 
-if ! curl -sf http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
+if ! curl -sf "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; then
   echo "[google] 启动本地 Chrome CDP..." >&2
-  setsid nohup "$DIR/chrome.sh" cdp 9222 >/tmp/myagent-google-chrome.log 2>&1 &
+  setsid nohup "$DIR/chrome.sh" cdp "$PORT" >/tmp/myagent-google-chrome.log 2>&1 &
   for _ in $(seq 1 20); do
-    curl -sf http://127.0.0.1:9222/json/version >/dev/null 2>&1 && break
+    curl -sf "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1 && break
     sleep 0.5
   done
 fi
 
-if ! curl -sf http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
+if ! curl -sf "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; then
   echo "[google] Chrome CDP 启动失败" >&2
   exit 1
 fi
 
-python3 - "$QUERY" "$COUNT" <<'PY'
+set +e
+python3 - "$QUERY" "$COUNT" "$PORT" <<'PY'
 import json
 import sys
 import time
@@ -32,14 +34,14 @@ import urllib.request
 
 import websocket
 
-query, count = sys.argv[1], int(sys.argv[2])
+query, count, port = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 url = "https://www.google.com/search?" + urllib.parse.urlencode({
     "q": query,
     "num": max(1, min(count, 30)),
     "hl": "zh-CN",
 })
 
-req = urllib.request.Request("http://127.0.0.1:9222/json/new?about:blank", method="PUT")
+req = urllib.request.Request(f"http://127.0.0.1:{port}/json/new?about:blank", method="PUT")
 target = json.load(urllib.request.urlopen(req, timeout=10))
 ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=20)
 
@@ -84,7 +86,7 @@ try:
     links = parsed.get("links", [])
 finally:
     try:
-        urllib.request.urlopen(f"http://127.0.0.1:9222/json/close/{target['id']}", timeout=5).read()
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/json/close/{target['id']}", timeout=5).read()
     except Exception:
         pass
     ws.close()
@@ -95,6 +97,12 @@ for marker in ("搜索结果", "AI 概览"):
         txt = txt[i:]
         break
 txt = txt.strip()
+blocked = any(m in txt for m in (
+    "reCAPTCHA", "unusual traffic", "enablejs", "consent.google", "我们的系统检测到"
+))
+if blocked:
+    print("[google] Google 拦截/CAPTCHA", file=sys.stderr)
+    sys.exit(3)
 if not txt:
     print("[google] 没有提取到结果", file=sys.stderr)
     sys.exit(1)
@@ -115,3 +123,10 @@ if links:
         if n >= 10:
             break
 PY
+RC=$?
+set -e
+if [ "$RC" -eq 3 ]; then
+  echo "[google] Google 被拦截，回退 DeepSeek 搜索" >&2
+  exec "$DIR/deepseek_search.sh" "$QUERY" "$COUNT"
+fi
+exit "$RC"

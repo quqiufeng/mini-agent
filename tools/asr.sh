@@ -8,6 +8,9 @@ HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
 [ $# -eq 1 ] || { echo "用法: $0 <本地音频文件>" >&2; exit 2; }
 SRC="$1"
 [ -f "$SRC" ] || { echo "[asr] 文件不存在: $SRC" >&2; exit 1; }
+LANG="${ASR_LANG:-zh}"
+[[ "$LANG" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "非法 ASR_LANG: $LANG" >&2; exit 2; }
+LANG_Q="$(printf '%q' "$LANG")"
 
 BASE="myagent-asr-$(date +%s)-$$"
 REMOTE_IN="/tmp/${BASE}.input"
@@ -18,7 +21,7 @@ WAV_Q="$(printf '%q' "$REMOTE_WAV")"
 scp -q "$SRC" "$HOST:$REMOTE_IN"
 
 CMD="ffmpeg -y -loglevel error -i $IN_Q -ar 16000 -ac 1 $WAV_Q"
-CMD+=" && SENSEVOICE_LANG=${ASR_LANG:-zh} /opt/my-agent/voice/listen.sh --file $WAV_Q --no-forward"
+CMD+=" && SENSEVOICE_LANG=$LANG_Q /opt/my-agent/voice/listen.sh --file $WAV_Q --no-forward"
 
 set +e
 OUT="$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" "$CMD" 2>&1)"

@@ -27,6 +27,10 @@ has_window() {
   tmux list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null | grep -qx "$1"
 }
 
+port_in_use() {
+  ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":$PORT$"
+}
+
 ensure_tui() {
   if has_window tui && pgrep -f "opencode[ ]attach http://127.0.0.1:$PORT" >/dev/null 2>&1; then
     return 0
@@ -53,6 +57,10 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
     exit 1
   fi
 else
+  if health || port_in_use; then
+    echo "[start] 端口 $PORT 已被占用，且不是 tmux session $SESSION" >&2
+    exit 1
+  fi
   tmux new-session -d -s "$SESSION" -n serve -c "$WORKDIR" \
     "opencode serve --port $PORT"
   for _ in $(seq 1 30); do

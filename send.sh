@@ -15,6 +15,11 @@ if [ $# -eq 0 ]; then
 fi
 TEXT="$*"
 
+if ! curl --max-time 2 -sf "http://127.0.0.1:$PORT/global/health" >/dev/null; then
+  echo "[send] 大脑未启动，先运行 ./start.sh --bg" >&2
+  exit 1
+fi
+
 python3 - "$PORT" "$TEXT" <<'PY'
 import sys
 import requests

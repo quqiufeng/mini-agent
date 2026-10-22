@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # @desc 本地联网搜索：调用 DeepSeek Search API，输出标题/链接/摘要
-# @usage tools/search.sh "关键词" [count]
-# @rule 本地自带搜索，不需要远程 gemini.sh；count 默认 5
+# @usage tools/deepseek_search.sh "关键词" [count]
+# @rule 本地自带搜索；count 默认 5
 set -euo pipefail
 
 [ $# -ge 1 ] || { echo "用法: $0 \"关键词\" [count]" >&2; exit 2; }

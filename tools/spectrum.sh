@@ -7,6 +7,8 @@ set -euo pipefail
 
 BANDS="${1:-32}"
 FPS="${2:-30}"
+[[ "$BANDS" =~ ^[1-9][0-9]*$ ]] && [ "$BANDS" -le 128 ] || { echo "bands 范围 1-128" >&2; exit 2; }
+[[ "$FPS" =~ ^[1-9][0-9]*$ ]] && [ "$FPS" -le 60 ] || { echo "fps 范围 1-60" >&2; exit 2; }
 SRC="${SPECTRUM_SOURCE:-}"
 if [ -z "$SRC" ]; then
   SRC="$(pactl list short sources 2>/dev/null | awk '/[Cc]omica|COMICA/ && $2 !~ /\.monitor$/ {print $2; exit}')"
@@ -28,7 +30,7 @@ chunk = 2048
 proc = subprocess.Popen(
     ["parec", "--device=" + src, "--format=s16le", "--rate=" + str(rate),
      "--channels=1", "--client-name=myagent-spectrum"],
-    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
 )
 
 freqs = np.fft.rfftfreq(chunk, 1.0 / rate)
@@ -42,7 +44,10 @@ try:
     while True:
         raw = proc.stdout.read(chunk * 2)
         if not raw or len(raw) < chunk * 2:
-            break
+            err = (proc.stderr.read() or b"").decode("utf-8", "replace").strip()
+            if err:
+                print("[spectrum] " + err, file=sys.stderr)
+            sys.exit(1)
         x = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
         spec = np.abs(np.fft.rfft(x * window))
         bands = []

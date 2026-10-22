@@ -4,12 +4,14 @@
 
 - 每个能力一个 `tools/<name>.sh`，头部写 `@desc`、`@usage`，可选 `@rule`。
 - **本机能做的**：直接在脚本里实现（如时间、VLC 播放、ADB 切 HDMI、截图、NAS 访问）。
-- **本机做不了的**：用 `tools/remote.sh <name> [args...]` 调用远程 `/opt/my-agent/operator/tools/<name>.sh`。
+- **本机做不了的**：用 `tools/remote.sh <name> [args...]` 调用远程 `/opt/my-agent/operator/tools/<name>.sh`；需要传环境变量时用 `tools/remote.sh --env K=V <name> ...`。
 - 大脑只调用 `tools/*.sh`，不要临时拼一长串命令。
+- 依赖：`python3-requests`、`python3-numpy`、`python3-websocket`、`scrcpy`、`adb`、Chrome、`xdotool`、`scrot`。
 
 示例：
 
 ```bash
+tools/doctor.sh               # 检查依赖/大脑/远程/手机/Chrome
 tools/list.sh                 # 列出本地工具
 tools/now.sh                  # 本机时间
 tools/tts.sh "你好"            # 远程合成、scp 到本机、PipeWire 小音响播放

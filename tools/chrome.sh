@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# @desc 本地 Chrome：打开网页 / headless 取 DOM / 截图 / 启动 CDP
-# @usage tools/chrome.sh open <url> | dump <url> | shot <url> <out.png> | cdp [port]
-# @rule 本地优先用 Chrome；需要远程登录态/专用 Chrome MCP 时再走远程
+# @desc 本地 Chrome：打开网页 / headless 取 DOM / 截图 / 启动或停止 CDP
+# @usage tools/chrome.sh open <url> | dump <url> | shot <url> <out.png> | cdp [port] | stop [port]
+# @rule 本地优先用 Chrome；只允许 http/https；CDP 端口默认 9222，可用 CDP_PORT 覆盖
 set -euo pipefail
 
 export DISPLAY="${DISPLAY:-:0}"
@@ -18,28 +18,46 @@ fi
 cmd="${1:-}"
 shift || true
 
+require_http() {
+  case "$1" in
+    http://*|https://*) ;;
+    *) echo "只允许 http/https: $1" >&2; exit 2 ;;
+  esac
+}
+
 case "$cmd" in
   open)
     [ $# -ge 1 ] || { echo "用法: $0 open <url>" >&2; exit 2; }
+    require_http "$1"
     exec google-chrome --new-window "$1"
     ;;
   dump)
     [ $# -ge 1 ] || { echo "用法: $0 dump <url>" >&2; exit 2; }
+    require_http "$1"
     exec google-chrome --headless=new --no-sandbox --disable-gpu --dump-dom "$1"
     ;;
   shot)
     [ $# -ge 2 ] || { echo "用法: $0 shot <url> <out.png>" >&2; exit 2; }
+    require_http "$1"
     exec google-chrome --headless=new --no-sandbox --disable-gpu --screenshot="$2" "$1"
     ;;
   cdp)
-    PORT="${1:-9222}"
+    PORT="${1:-${CDP_PORT:-9222}}"
+    [[ "$PORT" =~ ^[0-9]+$ ]] || { echo "非法端口: $PORT" >&2; exit 2; }
+    PROFILE="${CDP_PROFILE:-$HOME/.chrome-debug}"
     exec google-chrome --remote-debugging-port="$PORT" \
-      --user-data-dir="$HOME/.chrome-debug" \
+      --user-data-dir="$PROFILE" \
       --no-first-run --no-default-browser-check \
       --new-window about:blank
     ;;
+  stop)
+    PORT="${1:-${CDP_PORT:-9222}}"
+    [[ "$PORT" =~ ^[0-9]+$ ]] || { echo "非法端口: $PORT" >&2; exit 2; }
+    fuser -k "$PORT/tcp" 2>/dev/null || true
+    echo "stopped CDP on :$PORT"
+    ;;
   *)
-    echo "用法: $0 open <url> | dump <url> | shot <url> <out.png> | cdp [port]" >&2
+    echo "用法: $0 open <url> | dump <url> | shot <url> <out.png> | cdp [port] | stop [port]" >&2
     exit 2
     ;;
 esac

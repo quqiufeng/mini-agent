@@ -40,17 +40,13 @@
 
 注意：xdotool 只用于窗口聚焦和标签切换，不用于操作页面内容；页面内容走远程 Chrome/CDP。
 
-### 2.3 监控远程 opencode（保留的本地脚本）
+### 2.3 监控远程 opencode
 
-`~/scripts/watch_remote_opencode.sh`：
-
-- 每 600 秒激活远程 qterminal（窗口 ID `81788934`），点击第一个标签页。
-- 粘贴 `继续` 并回车；不检查任务状态。
-- 日志：`~/scripts/logs/watch_remote_opencode.log`
-- 停止：`touch ~/scripts/stop_watch_remote_opencode`
-- 启动和依赖说明见脚本头部注释。
-
-这是本地唯一保留的自动化脚本，其他能力一律调用远程白名单工具。
+- 用 `tools/remote_opencode_retry.sh` **单次**发送“继续”。
+- 由 opencode 每 5 分钟调用一次：`sleep 300` → 脚本。
+- 脚本自动发现 XAUTHORITY 和 qterminal 窗口，发送后恢复原窗口；不 sleep、不循环。
+- 日志：`~/my-agent/logs/remote_opencode_retry.log`
+- 其他能力一律调用远程白名单工具。
 
 ### 2.4 本机硬件（客厅小机箱）
 
@@ -255,6 +251,7 @@ echo $! > /tmp/opencode/vlc.pid
 - `tools/deepseek_search.sh "关键词" [count]`：调 DeepSeek Search API，输出标题/链接/摘要。
 - `tools/remote_opencode_retry.sh ["文本"]`：**单次**向远程 opencode 第一个 tab 发送“继续”；由 opencode 每 5 分钟调用一次（`sleep 300` → 脚本），脚本本身不 sleep、不循环。
 - `tools/phone_music.sh play|stop`：手机汽水音乐；`tools/phone_audio.sh start|stop|status`：手机音频经 scrcpy 转发到 3.5mm 小音响。
+- `tools/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。
 - 回环测试：`tts.sh` → 小音响 → `record_mic.sh` → `asr.sh` 已验证可行。音量有三层：音响物理旋钮、本机 OS 音量（PipeWire/Pulse）、ALSA PCM。`tts.sh` 默认用 `SMALLPC_AOUT=pulse`，因此 OS 音量可调；100% + 麦克风增益最大容易削波，回环时建议适当降低。短句识别准确，长句可能有误差。
 - 大脑只调用 `tools/*.sh`，不要临时拼一长串命令。
 

@@ -6,6 +6,7 @@ set -euo pipefail
 
 SECS="${1:-5}"
 OUT="${2:-/tmp/myagent-mic-$(date +%s).wav}"
+[[ "$SECS" =~ ^[1-9][0-9]*$ ]] || { echo "seconds 必须是正整数" >&2; exit 2; }
 SRC="${MIC_SOURCE:-}"
 if [ -z "$SRC" ]; then
   SRC="$(pactl list short sources 2>/dev/null | awk '/[Cc]omica|COMICA/ && $2 !~ /\.monitor$/ {print $2; exit}')"
