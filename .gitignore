@@ -1,0 +1,6 @@
+logs/
+*.log
+*.pid
+stop_*
+.env
+.DS_Store
