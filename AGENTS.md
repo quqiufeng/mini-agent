@@ -40,20 +40,12 @@
 
 注意：xdotool 只用于窗口聚焦和标签切换，不用于操作页面内容；页面内容走远程 Chrome/CDP。
 
-### 2.3 监控远程 opencode
-
-- 用 `tools/remote_opencode_retry.sh` **单次**发送“继续”。
-- 由 opencode 每 5 分钟调用一次：`sleep 300` → 脚本。
-- 脚本自动发现 XAUTHORITY 和 qterminal 窗口，发送后恢复原窗口；不 sleep、不循环。
-- 日志：`~/my-agent/logs/remote_opencode_retry.log`
-- 其他能力一律调用远程白名单工具。
-
 ### 2.4 本机硬件（客厅小机箱）
 
 - 3.5mm 模拟输出：`card 0: ALC662 Analog`，接小音响。
 - USB 麦克风：`card 1: Comica_EJoy Uni`。
 - HDMI：`HDMI-1` 输出 1920×1080，接 Sony 电视 HDMI3；电视显示区域设为“全像素”。
-- 已安装 `adb`（1.0.41 / 34.0.4）。电视 `192.168.1.101:5555` 已授权：
+- 已安装 `adb`（1.0.41 / 34.0.4）。电视 `192.168.1.110:5555` 已授权：
   `Sony BRAVIA 4K GB`（`BRAVIA_ATV2_CN`），Android 8.0.0。
 
 ### 2.5 用 ADB 控制 Sony 电视
@@ -61,9 +53,9 @@
 连接与常用命令：
 
 ```bash
-adb connect 192.168.1.101:5555
+adb connect 192.168.1.110:5555
 adb devices -l
-adb -s 192.168.1.101:5555 shell '...'
+adb -s 192.168.1.110:5555 shell '...'
 ```
 
 - 唤醒：`input keyevent 224`
@@ -78,6 +70,22 @@ adb -s 192.168.1.101:5555 shell '...'
 - 限制：切到 HDMI 输入后 `screencap` 返回 0 字节，`screenrecord` 无有效帧，无法用 adb 抓 HDMI 画面
 
 显示设置路径：设置 → 显示 → 屏幕设定（16:9、自动显示区域、显示区域=全像素）。
+
+### 2.5.1 电视直连 NAS 播放（首选）
+
+电视已装 VLC 3.7.1（`org.videolan.vlc`），并改为有线（`192.168.1.110`）。看电影优先让**电视自己拉 NAS 流**，本机只拼直链 + adb 唤起，不转码不中继：
+
+```bash
+tools/tv_play.sh 寒战          # 在 NAS 媒体库搜索并播放（多个取最大）
+tools/tv_play.sh --find 寒战   # 只搜不播
+tools/tv_play.sh stop          # 停止（返回键）
+tools/tv_play.sh "寒站1994/寒战...mkv"   # 直接给相对路径
+```
+
+- 直链形如 `http://用户:密码@192.168.1.53:5005/sata11-18072858035/...`，Basic 认证写在 URL 里；局域网内可接受。
+- 实测 4K HEVC（3.25GB、约 4Mbps）电视直连流畅，VLC 硬解，CPU 约 11%。
+- 搜索用 WebDAV PROPFIND 分层并发（约 5 秒）；`find` 不能直接用 `dav://`，需用 GVFS 挂载路径，且全库 find 很慢。
+- 截图验证：`adb -s 192.168.1.110:5555 exec-out screencap -p > /tmp/tv.png`。
 
 敏感操作（安装/卸载应用、改系统设置、断电重启）先向用户确认。
 
@@ -98,10 +106,12 @@ adb -s 192.168.1.101:5555 shell '...'
 
 适用场景：在电视上看 NAS 电影 / 听音乐。
 
+优先用 2.5.1 的 `tools/tv_play.sh`（电视直连 NAS，不占本机资源）；只有需要在**本机桌面**播放或做音频/背景音乐时才用下面的本机 VLC。
+
 原则：**默认用 `vlc` 正常窗口打开**，不占满桌面，用户可继续使用桌面；只有用户明确要求全屏时才加 `--fullscreen`。不要用 `cvlc -I dummy` 做日常播放。
 
 1. 确认电视在 HDMI3：
-   `adb -s 192.168.1.101:5555 shell input keyevent 245`
+   `adb -s 192.168.1.110:5555 shell input keyevent 245`
 2. 在 NAS 上模糊找片：目录名可能有错字（如“寒站1994”里放“寒战1994...”）；
    `find -iname '*中文*'` 在 GVFS 上可能匹配不到中文，优先用 `ls` / `gio list` 或远程 `find_file.sh`。
 3. 普通窗口播放（音乐/背景）：
@@ -249,7 +259,6 @@ echo $! > /tmp/opencode/vlc.pid
 - `tools/chrome.sh open <url>` / `dump <url>` / `shot <url> <out.png>` / `cdp [port]`：本地 Chrome 网页、headless DOM/截图、CDP（默认 9222，profile `~/.chrome-debug`）。已验证 Chrome 156 + CDP 可用。
 - `tools/google_search.sh "关键词" [count]`：本机 Chrome CDP 打开 Google，输出结果正文和外部链接；headless 会被 CAPTCHA，必须 headful。
 - `tools/deepseek_search.sh "关键词" [count]`：调 DeepSeek Search API，输出标题/链接/摘要。
-- `tools/remote_opencode_retry.sh ["文本"]`：**单次**向远程 opencode 第一个 tab 发送“继续”；由 opencode 每 5 分钟调用一次（`sleep 300` → 脚本），脚本本身不 sleep、不循环。
 - `tools/phone_music.sh play|stop`：手机汽水音乐；`tools/phone_audio.sh start|stop|status`：手机音频经 scrcpy 转发到 3.5mm 小音响。
 - `tools/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。
 - 回环测试：`tts.sh` → 小音响 → `record_mic.sh` → `asr.sh` 已验证可行。音量有三层：音响物理旋钮、本机 OS 音量（PipeWire/Pulse）、ALSA PCM。`tts.sh` 默认用 `SMALLPC_AOUT=pulse`，因此 OS 音量可调；100% + 麦克风增益最大容易削波，回环时建议适当降低。短句识别准确，长句可能有误差。

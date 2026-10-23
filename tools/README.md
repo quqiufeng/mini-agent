@@ -24,9 +24,11 @@ tools/chrome.sh shot https://example.com /tmp/x.png
 tools/chrome.sh cdp 9222
 tools/google_search.sh "关键词"   # 本机 Chrome CDP 搜 Google
 tools/deepseek_search.sh "关键词" # DeepSeek Search API
-tools/remote_opencode_retry.sh  # 单次向远程 opencode 发“继续”；由 opencode 每5分钟调用
 tools/phone_music.sh play     # 手机汽水音乐 → 小音响
 tools/phone_audio.sh status   # 手机音频转发状态
+tools/tv_play.sh 寒战         # 电视 VLC 直连 NAS 播放（本机只做遥控）
+tools/tv_play.sh --find 寒战  # 只搜路径不播放
+tools/tv_play.sh stop         # 停止电视播放
 tools/remote.sh now           # 调远程 now.sh
 ```
 
