@@ -87,7 +87,24 @@ tools/tv_play.sh "寒站1994/寒战...mkv"   # 直接给相对路径
 - 搜索用 WebDAV PROPFIND 分层并发（约 5 秒）；`find` 不能直接用 `dav://`，需用 GVFS 挂载路径，且全库 find 很慢。
 - 截图验证：`adb -s 192.168.1.110:5555 exec-out screencap -p > /tmp/tv.png`。
 
-敏感操作（安装/卸载应用、改系统设置、断电重启）先向用户确认。
+### 2.5.2 电视腾讯视频（云视听极光）
+
+`tools/tencent.sh <关键词>`：中文转拼音首字母，用 app 内置 T9 键盘搜索（默认不播放）：
+
+```bash
+tools/tencent.sh 寒战          # 搜“hz”，结果截图 /tmp/tencent_search.png
+tools/tencent.sh 寒战 --play   # 搜索后按 OK 播放第一集
+tools/tencent.sh 庆余年 --full # 用全拼而不是首字母
+tools/tencent.sh 伟大的长征 --expect 伟大的长征   # 搜索并用 OCR 校验详情页标题
+```
+
+- 屏幕固定 1920×1080；T9 网格坐标由 OCR 实测：列 x=(330 409 488 568 648 729)，行 y=(384 463 543 623 703 783)，不要按截图目测。
+- 点击语义：单击只聚焦，聚焦后再点一次才输入；脚本逐字母输入，**每点一次都截图 + OCR 核对输入框**，多退少补（退格 (531,275)；输入框区域 x 335-720、y 160-215），不用盲目的双击。
+- 多音字：uconv 默认把「长」读成 zhǎng；脚本先用词表纠正（长征→chang zheng），所以 伟大的长征 → wddcz。
+- 输入 2 个字母（如 wd）时联想列表已出现「伟大的长征」；完整输入后走：点「清空」→ 右移 3 次 → OK 进详情；`--play` 再按一次 OK 播放。
+- `--expect <标题>` 对详情页做 OCR 校验，不匹配返回 3；输入核对失败返回 4，不会盲选。
+- 播放页在同一个 `HomeSingleTaskActivity` 内，`am start` 退不出播放，脚本用 `am force-stop` 冷启动保证回到首页（约 20-30 秒）。
+- 截图：搜索 `/tmp/tencent_search.png`，结果 `/tmp/tencent_result.png`，播放 `/tmp/tencent_play.png`。
 
 ### 2.6 NAS（WebDAV）
 

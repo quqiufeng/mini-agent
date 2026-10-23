@@ -29,6 +29,9 @@ tools/phone_audio.sh status   # 手机音频转发状态
 tools/tv_play.sh 寒战         # 电视 VLC 直连 NAS 播放（本机只做遥控）
 tools/tv_play.sh --find 寒战  # 只搜路径不播放
 tools/tv_play.sh stop         # 停止电视播放
+tools/tencent.sh 寒战         # 电视腾讯视频按首字母搜索（默认只搜不播）
+tools/tencent.sh 寒战 --play  # 搜索并播放第一集
+tools/tencent.sh 伟大的长征 --expect 伟大的长征  # 逐字母 OCR 校验 + 详情页标题校验
 tools/remote.sh now           # 调远程 now.sh
 ```
 
