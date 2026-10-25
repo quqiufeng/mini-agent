@@ -236,13 +236,22 @@ echo $! > /tmp/opencode/vlc.pid
 ### 5.1 运行
 
 - 目录：`~/my-agent`
-- 启动：`./start.sh --bg`；attach：`./start.sh`
-- 结构：tmux session `local-my-agent`
-  - window `serve`：`opencode serve --port 4097`
-  - window `tui`：`opencode attach http://127.0.0.1:4097`
+- 启动：`./start.sh` —— 用 LuaJIT FFI（libxdo）打开**一个** qterminal 标签并键入 tmux 命令：
+  - tmux 窗口 `0:serve` → `opencode serve --port 4097`
+  - tmux 窗口 `1:tui` → `opencode attach http://127.0.0.1:4097`（TUI，默认停在这里）
+- tmux 窗口就是标签（状态栏 `0:serve 1:tui`），`Ctrl+B n/p` 切换；会话设了 `destroy-unattached`，关掉终端即销毁，不留后台。
+- 打字前脚本自动把 IBus 切到英文（否则 libpinyin 会把 ASCII 转成中文），结束后还原。
 - 工作目录固定为 `~/my-agent`，因此 opencode 会自动读取 `~/my-agent/AGENTS.md`。
 - 发送消息：`./send.sh "现在几点"`（POST `/tui/append-prompt` + `/tui/submit-prompt`）
-- 状态/停止：`./status.sh` / `./stop.sh`
+- 状态/停止：`./status.sh`（health + 进程）/ `./stop.sh`
+
+### 5.1.1 语音 GUI（SDL2，本机）
+
+- `gui/sdl/`：C + SDL2/SDL2_ttf 小窗口；**常驻采集** USB 麦克风（默认 Comica），静音切句 → `tools/asr.sh`（远程 SenseVoice）→ 文本唤醒词门控 → `tools/send.sh` 转发本地大脑（与远程 GUI 一样走 `/tui/append-prompt` + `/tui/submit-prompt`）。
+- 唤醒词与远程一致：`VOICE_WAKE` 默认 `你好星期五,星期五`；唤醒后 10 秒内的话直接当指令（不需要再说唤醒词）；VAD 阈值可用 `VOICE_RMS` 调。
+- 构建：`make -C gui/sdl`；运行：`gui/launch.sh`；桌面项 `~/.local/share/applications/myagent-voice.desktop`（`Terminal=false`）。
+- 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体。
+- GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
 
 ### 5.2 本地能力边界
 

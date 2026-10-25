@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# status.sh — 查看本地 my-agent 大脑状态
+# status.sh — 查看本地 my-agent 大脑状态（tmux）
 set -uo pipefail
-
 SESSION="${AGENT_SESSION:-local-my-agent}"
 PORT="${AGENT_PORT:-4097}"
 
@@ -13,8 +12,7 @@ tmux list-windows -t "$SESSION" -F '#{window_index}: #{window_name} (#{pane_curr
 echo
 echo "== health :$PORT =="
 if curl --max-time 2 -sf "http://127.0.0.1:$PORT/global/health"; then
-  echo
-  echo "OK"
+  echo; echo "OK"
 else
   echo "DOWN"
 fi
