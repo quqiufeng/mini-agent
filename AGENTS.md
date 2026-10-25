@@ -156,7 +156,7 @@ echo $! > /tmp/opencode/vlc.pid
 
 ### 3.1 定位
 
-- 远程 `192.168.1.10`（主电脑）是能力主机；本机 `192.168.1.105`（客厅小机箱）只做控制。
+- 远程 `192.168.1.10`（主电脑）是能力主机；本机 `192.168.1.68`（客厅小机箱）只做控制。
 - my-agent 架构：语音/微信 → 单脑 `opencode`（tmux，端口 4097）→ 白名单工具 → 按来源回程。
 - 三条铁律：入口只产文本、单脑、能力=白名单脚本。
 
@@ -175,13 +175,16 @@ echo $! > /tmp/opencode/vlc.pid
 
 **agentkit：LuaJIT + FFI 能力层**
 
-- `ak.x11`：窗口定位、截屏、XTest 输入、输入法切换。
+- `ak.x11`：窗口定位/激活走 **libxdo FFI**（`operator/tools/xdo.lua`）；截屏、移动/点击/按键/打字、模板匹配、图像差分走 **`libagentkit.so` FFI**（`agentkit/cpp`，`make -C agentkit/cpp` 生成）；含 IBus 输入法切换。已不依赖 xdotool 命令，`luajit -e` 一行即可操作桌面。
 - `ak.ocr`：PP-OCRv4，返回文本和坐标。
 - `ak.voice`：ASR/TTS/录音（SenseVoice + Kokoro）。
 - `ak.cdp`：CDP/DOM 精准操作；守护进程 `cdpd.js`（本机 9333），Chrome 只授权一次。
 - `ak.map`：`maps/<app>.lua` 按窗口相对坐标固化控件；`ak.record`/`ak.batch` 录制和批处理。
 - `adapters/`：generic、chrome、wechat、google、gemini、github、wordcard。
 - 核心思路：探索一次 → 固化映射 → 生成 Lua 流程 → 回放并用 OCR/图像差分校验。
+- 直接驱动示例（远程执行）：
+  `luajit -e 'package.path="/opt/my-agent/?.lua;/opt/my-agent/?/init.lua;"..package.path; local ak=require("agentkit"); local w=ak.x11.window("标题",{exact=true}); w:activate(); w:click_text("导入",{0,0,180,720})'`
+- 依赖：`libxdo3`、`agentkit/lib/libagentkit.so`；未设 `DISPLAY` 时自动从 `pcmanfm-qt` 会话读 `DISPLAY`/`XAUTHORITY`，可用 `AGENTKIT_LIB` 覆盖库路径。
 
 ### 3.3 调用方式
 
@@ -189,9 +192,10 @@ echo $! > /tmp/opencode/vlc.pid
 - 直接调用：`ssh quqiufeng@192.168.1.10 '/opt/my-agent/operator/tools/<name>.sh ...'`；参数和规则见工具头注释及 `TOOLS.md`。
 - 浏览器：`tools/chrome_debug.sh` 起专用 Chrome（9222），再用 chrome-devtools MCP 或 `ak.cdp`；不要用本机 Puppeteer/headless 硬扛。
 - 终端标签：`tools/termctl.sh tabs|shot [N]|send <N> "<指令>"`。
-- 截图/OCR/GUI：`tools/screenshot.sh`、`agentkit`（`w:ocr()`、`w:click_text()`）、`tools/progress.sh`。
+- 截图/OCR/GUI：`tools/screenshot.sh`、`agentkit`（`w:ocr()`、`w:click_text()`）、`tools/progress.sh`；精细操作直接 `luajit -e` 调 `ak.x11`（FFI），不要拼 xdotool 命令。
 - 语音/微信：`tools/say.sh`、`tools/voices.sh`、`tools/wechat_send.sh`、`tools/wechat_send_file.sh`。
 - 媒体/家居/手机/Kindle：`music.sh`、`tv.sh`、`camera.sh`、`photo.sh`、`phone.sh`、`ebook.sh`、`vacuum.sh`、`detect.sh`。
+- 网络拓扑：远程用 `ssh quqiufeng@192.168.1.10 '/opt/my-agent/operator/tools/netmap.sh scan'`（生成 `operator/devices.json`、`NETWORK.md`、`devices.env`）；本机用 `tools/netmap.sh scan`。
 - 手机音频：`phone_music.sh play|stop`（汽水音乐）、`phone_audio.sh start|stop|status`（scrcpy 转发到小音响）。
 - 内容/数据/搜索：`image.sh`、`img_video.sh`、`video_dub.sh`、`lora.sh`、`stock.sh`、`dash.sh`、`google_search.sh`、`git_trending.sh`、`weibo_*.sh`、`douyin.sh`。
 - 集群/会话：`remote.sh`；启动大脑：`operator/start.sh`（通常已在跑，不要随意重启）。
@@ -252,6 +256,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 本地搜索（`google_search.sh` 本机 Chrome CDP；`deepseek_search.sh` DeepSeek Search API）
 - Chrome 156 + CDP/headless（网页打开、DOM/截图、CDP 9222；`tools/chrome.sh`）
 - ADB 控制电视、HDMI 切换、截图、xdotool 窗口操作
+- 局域网扫描/拓扑：`tools/netmap.sh scan|show|sources`（UDP 触发 ARP + 端口探测，约 4 秒）
 - 本地 tmux + opencode 大脑
 
 **本地做不了，走远程：**
@@ -277,6 +282,7 @@ echo $! > /tmp/opencode/vlc.pid
 - `tools/google_search.sh "关键词" [count]`：本机 Chrome CDP 打开 Google，输出结果正文和外部链接；headless 会被 CAPTCHA，必须 headful。
 - `tools/deepseek_search.sh "关键词" [count]`：调 DeepSeek Search API，输出标题/链接/摘要。
 - `tools/phone_music.sh play|stop`：手机汽水音乐；`tools/phone_audio.sh start|stop|status`：手机音频经 scrcpy 转发到 3.5mm 小音响。
+- `tools/netmap.sh scan|show|sources`：本机扫 192.168.1.0/24，输出 `NETWORK.local.md`、`devices.local.json`、`devices.local.env`（`NETMAP_*_IP`）。
 - `tools/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。
 - 回环测试：`tts.sh` → 小音响 → `record_mic.sh` → `asr.sh` 已验证可行。音量有三层：音响物理旋钮、本机 OS 音量（PipeWire/Pulse）、ALSA PCM。`tts.sh` 默认用 `SMALLPC_AOUT=pulse`，因此 OS 音量可调；100% + 麦克风增益最大容易削波，回环时建议适当降低。短句识别准确，长句可能有误差。
 - 大脑只调用 `tools/*.sh`，不要临时拼一长串命令。

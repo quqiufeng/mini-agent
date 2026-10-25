@@ -4,3 +4,6 @@ logs/
 stop_*
 .env
 .DS_Store
+NETWORK.local.md
+devices.local.json
+devices.local.env

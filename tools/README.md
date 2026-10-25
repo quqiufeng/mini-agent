@@ -32,6 +32,9 @@ tools/tv_play.sh stop         # 停止电视播放
 tools/tencent.sh 寒战         # 电视腾讯视频按首字母搜索（默认只搜不播）
 tools/tencent.sh 寒战 --play  # 搜索并播放第一集
 tools/tencent.sh 伟大的长征 --expect 伟大的长征  # 逐字母 OCR 校验 + 详情页标题校验
+tools/netmap.sh scan          # 扫描本机局域网，生成 NETWORK.local.md / devices.local.*
+tools/netmap.sh show          # 查看上次拓扑
+tools/netmap.sh sources       # 输出 NETMAP_*_IP 变量
 tools/remote.sh now           # 调远程 now.sh
 ```
 
