@@ -42,7 +42,7 @@
 
 ### 2.4 本机硬件（客厅小机箱）
 
-- 3.5mm 模拟输出：`card 0: ALC662 Analog`，接小音响。
+- 小音箱：**USB DTC 480**（USB DAC），默认输出 sink：`alsa_output.usb-DUNU_DTC_480_DTC_480-00.analog-stereo`；`wpctl set-default 58` 固定。
 - USB 麦克风：`card 1: Comica_EJoy Uni`。
 - HDMI：`HDMI-1` 输出 1920×1080，接 Sony 电视 HDMI3；电视显示区域设为“全像素”。
 - 已安装 `adb`（1.0.41 / 34.0.4）。电视 `192.168.1.110:5555` 已授权：
@@ -143,8 +143,8 @@ echo $! > /tmp/opencode/vlc.pid
 
 - 音乐可加 `--no-video`，视频默认窗口播放，可最小化。
 - 仅当用户要求全屏电影时，把命令改为 `vlc --fullscreen ...`。
-- 音频默认走 3.5mm 模拟输出；确认未静音：
-  `pactl set-sink-mute alsa_output.pci-0000_00_1b.0.analog-stereo 0`
+- 音频默认走 USB 小音箱（DTC 480）；确认未静音：
+  `pactl set-sink-mute alsa_output.usb-DUNU_DTC_480_DTC_480-00.analog-stereo 0`
 - 如果 VLC 记住最大化/全屏几何导致遮挡桌面：备份并删除
   `~/.config/vlc/vlc-qt-interface.conf`，再启动即恢复默认小窗。
 - 停止：`kill $(cat /tmp/opencode/vlc.pid)`；不要用 `pkill -f 'vlc.*中文'`，容易误伤当前 shell。
