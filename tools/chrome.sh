@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # @desc 本地 Chrome：打开网页 / headless 取 DOM / 截图 / 启动或停止 CDP
 # @usage tools/chrome.sh open <url> | dump <url> | shot <url> <out.png> | cdp [port] | stop [port]
-# @rule 本地优先用 Chrome；只允许 http/https；CDP 端口默认 9222，可用 CDP_PORT 覆盖
+# @rule 说“打开网页/打开 <网站>”→ tools/chrome.sh open <url>；本地 Chrome 可访问外网；只允许 http/https；CDP 默认 9222
 set -euo pipefail
 
 export DISPLAY="${DISPLAY:-:0}"
