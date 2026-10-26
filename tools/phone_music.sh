@@ -19,7 +19,18 @@ case "${1:-}" in
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             echo "已在播放（音频转发 pid=$(cat "$PIDFILE")）"; exit 0
         fi
-        setsid nohup scrcpy -s "$s" --no-video --audio-source=output --no-control \
+        # 视频窗口钉在 GUI 右侧预览区（真同步），音频仍走 USB 小音箱
+        export DISPLAY="${DISPLAY:-:0}" XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
+        gx=960; gy=0; gw=450; gh=900
+        gwid=$(xdotool search --name 'My Agent' 2>/dev/null | tail -1 || true)
+        if [ -n "$gwid" ]; then
+            ax=$(xwininfo -id "$gwid" 2>/dev/null | awk -F: '/Absolute upper-left X/{gsub(/ /,"",$2);print $2}')
+            ay=$(xwininfo -id "$gwid" 2>/dev/null | awk -F: '/Absolute upper-left Y/{gsub(/ /,"",$2);print $2}')
+            [ -n "$ax" ] && [ -n "$ay" ] && { gx=$((ax + 480)); gy=$ay; }
+        fi
+        setsid nohup scrcpy -s "$s" --audio-source=output --no-control \
+            --window-borderless --always-on-top \
+            --window-x "$gx" --window-y "$gy" --window-width "$gw" --window-height "$gh" \
             >/tmp/myagent-phone-music.log 2>&1 &
         echo $! > "$PIDFILE"
         sleep 2

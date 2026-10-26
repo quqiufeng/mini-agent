@@ -255,6 +255,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 构建：`make -C gui/sdl`；运行：`gui/launch.sh`；桌面项 `~/.local/share/applications/myagent-voice.desktop`（`Terminal=false`）。
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
+- 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `tools/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。
 - **开发者模式**：语音以「开发者模式」开头（如「你好星期五，开发者模式 只回复OK」）→ 删掉“开发者模式”，余下文本由 `tools/tui_type.sh` 直接粘贴进大脑 TUI 并回车（绕过语音转发/工具规则）。
 
 ### 5.1.2 能力与权限（靠 AGENTS.md）
@@ -262,6 +263,11 @@ echo $! > /tmp/opencode/vlc.pid
 - 不靠 `opencode.json`：权限与动作由本文档约定——大脑只调用**已实现的工具脚本** `tools/*.sh`，不临时拼 shell、不绕过工具。
 - 新增能力 = 新增 `tools/<name>.sh`（头部写 `@desc`/`@usage`），并在本文档登记；大脑启动时读取本文档。
 - 改 `AGENTS.md` 后需重启大脑（`./stop.sh && ./start.sh`）才生效。
+
+### 5.1.3 调试约定
+
+- **调试语音/音频前先暂停播放**：`tools/media.sh stop`、`tools/phone_music.sh stop`，避免音乐/视频干扰麦克风与 VAD。
+- 不要擅自改音量；需要时先说明。
 
 ### 5.2 本地能力边界
 

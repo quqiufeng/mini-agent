@@ -2,6 +2,7 @@
 // 常驻采集 USB 麦克风 → 静音切句 → 远程 ASR → 唤醒词门控 → send.sh 转发大脑
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_image.h>
 #include <alsa/asoundlib.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -12,8 +13,10 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-#define W 480
-#define H 640
+#define LW 480
+#define PW 450
+#define W (LW + PW)
+#define H 900
 #define ROOT "/home/quqiufeng/my-agent"
 #define FONT "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 #define ASR_BIN ROOT "/tools/asr.sh"
@@ -36,6 +39,55 @@ static double suppress_until = 0;
 static int ack_busy = 0;
 static int ack_should_play = 0;
 static char *run_capture(char *const argv[], int *rc_out);
+
+static SDL_Texture *preview_tex = NULL;
+static time_t preview_mtime = 0;
+
+static void *preview_after_cmd(void *arg) {
+    (void)arg;
+    int delays[] = { 2, 6, 12 };
+    int prev = 0;
+    for (int i = 0; i < 3; i++) {
+        struct timespec ts = { delays[i] - prev, 0 };
+        nanosleep(&ts, NULL);
+        prev = delays[i];
+        int r = system(ROOT "/tools/appshot.sh >/dev/null 2>&1");
+        (void)r;
+    }
+    return NULL;
+}
+
+static void *preview_once(void *arg) {
+    (void)arg;
+    struct timespec ts = { 1, 0 };
+    nanosleep(&ts, NULL);
+    int r = system(ROOT "/tools/appshot.sh >/dev/null 2>&1");
+    (void)r;
+    return NULL;
+}
+
+static void preview_quick(void) {
+    pthread_t th;
+    pthread_create(&th, NULL, preview_once, NULL);
+    pthread_detach(th);
+}
+
+static void sync_scrcpy(int wx, int wy) {
+    (void)wx; (void)wy;
+    int r = system(
+        "g=$(xdotool search --name 'My Agent' 2>/dev/null | tail -1); "
+        "ax=$(xwininfo -id $g 2>/dev/null | awk '/Absolute upper-left X/{print $4}'); "
+        "ay=$(xwininfo -id $g 2>/dev/null | awk '/Absolute upper-left Y/{print $4}'); "
+        "s=$(xdotool search --class scrcpy 2>/dev/null | tail -1); "
+        "[ -n \"$ax\" ] && [ -n \"$s\" ] && xdotool windowmove $s $((ax+480)) $ay 2>/dev/null");
+    (void)r;
+}
+
+static void preview_refresh(void) {
+    pthread_t th;
+    pthread_create(&th, NULL, preview_after_cmd, NULL);
+    pthread_detach(th);
+}
 
 static snd_pcm_t *cap_pcm = NULL;
 static volatile int cap_stop = 0;
@@ -274,6 +326,7 @@ static void *worker(void *arg) {
                 char *targv[] = { TUI_BIN, devbuf, NULL };
                 int trc = 0; char *tout = run_capture(targv, &trc); free(tout);
                 set_status(trc == 0 ? "已输入 TUI" : "TUI 输入失败");
+                preview_refresh();
                 continue;
             }
         }
@@ -352,6 +405,8 @@ static void text(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y, SDL_
 int main(void) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     if (TTF_Init() != 0) { fprintf(stderr, "TTF_Init: %s\n", TTF_GetError()); return 1; }
+    IMG_Init(IMG_INIT_PNG);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
     if (chdir(ROOT) != 0) {}
     SDL_Window *win = SDL_CreateWindow("My Agent · 语音", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_SHOWN);
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -371,15 +426,36 @@ int main(void) {
     ack_speak(0);
 
     int running = 1, recording = 0, quiet = 0, proc_pos = 0;
+    int drag_hidden = 0; Uint32 last_move_tick = 0;
     double speech_rms = 0; char input[512] = "";
     SDL_Event e;
-    SDL_Rect micbtn = { W - 110, 96, 90, 30 };
+    SDL_Rect micbtn = { LW - 110, 96, 90, 30 };
     SDL_Rect pausebtn = { 40, H - 44, 130, 32 };
+    SDL_Rect bvoldown = { 40, H - 196, 196, 36 };
+    SDL_Rect bvolup = { 244, H - 196, 196, 36 };
+    SDL_Rect bprev = { 40, H - 150, 120, 36 };
+    SDL_Rect bplay = { 172, H - 150, 136, 36 };
+    SDL_Rect bnext = { 320, H - 150, 120, 36 };
     size_t seg_start = 0;
 
     while (running) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
+            else if (e.type == SDL_WINDOWEVENT) {
+                const char *sidcmd = "xdotool $(xdotool search --class scrcpy 2>/dev/null | tail -1)";
+                if (e.window.event == SDL_WINDOWEVENT_MOVED) {
+                    int r = system("xdotool windowunmap $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+                    drag_hidden = 1;
+                    last_move_tick = SDL_GetTicks();
+                } else if (e.window.event == SDL_WINDOWEVENT_MINIMIZED || e.window.event == SDL_WINDOWEVENT_HIDDEN) {
+                    int r = system("xdotool windowminimize $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+                } else if (e.window.event == SDL_WINDOWEVENT_RESTORED || e.window.event == SDL_WINDOWEVENT_SHOWN) {
+                    int wx = 0, wy = 0; SDL_GetWindowPosition(win, &wx, &wy);
+                    int r = system("xdotool windowmap $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+                    sync_scrcpy(wx, wy);
+                }
+                (void)sidcmd;
+            }
             else if (e.type == SDL_KEYDOWN) {
                 if (e.key.keysym.sym == SDLK_ESCAPE) running = 0;
                 else if (e.key.keysym.sym == SDLK_BACKSPACE) { size_t l = strlen(input); if (l) input[l-1] = 0; }
@@ -389,6 +465,7 @@ int main(void) {
                     char *sargv[] = { SEND_BIN, input, NULL };
                     int rc = -1; for (int i = 1; i <= 3; i++) { char *o = run_capture(sargv, &rc); free(o); if (!rc) break; sleep(3); }
                     set_status(rc == 0 ? "已发送" : "发送失败");
+                    preview_refresh();
                     input[0] = 0;
                 }
             } else if (e.type == SDL_TEXTINPUT) {
@@ -399,6 +476,21 @@ int main(void) {
                 if (x >= micbtn.x && x <= micbtn.x + micbtn.w && y >= micbtn.y && y <= micbtn.y + micbtn.h) cycle_mic();
                 else if (x >= pausebtn.x && x <= pausebtn.x + pausebtn.w && y >= pausebtn.y && y <= pausebtn.y + pausebtn.h) {
                     paused = !paused; set_status(paused ? "已暂停" : "待唤醒");
+                } else if (x >= bvoldown.x && x <= bvoldown.x + bvoldown.w && y >= bvoldown.y && y <= bvoldown.y + bvoldown.h) {
+                    if (fork() == 0) { execl(ROOT "/tools/volume.sh", "volume.sh", "down", (char *)NULL); _exit(1); }
+                    set_status("音量 -");
+                } else if (x >= bvolup.x && x <= bvolup.x + bvolup.w && y >= bvolup.y && y <= bvolup.y + bvolup.h) {
+                    if (fork() == 0) { execl(ROOT "/tools/volume.sh", "volume.sh", "up", (char *)NULL); _exit(1); }
+                    set_status("音量 +");
+                } else if (x >= bprev.x && x <= bprev.x + bprev.w && y >= bprev.y && y <= bprev.y + bprev.h) {
+                    if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "prev", (char *)NULL); _exit(1); }
+                    set_status("上一首"); preview_quick();
+                } else if (x >= bplay.x && x <= bplay.x + bplay.w && y >= bplay.y && y <= bplay.y + bplay.h) {
+                    if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "playpause", (char *)NULL); _exit(1); }
+                    set_status("播放/暂停"); preview_quick();
+                } else if (x >= bnext.x && x <= bnext.x + bnext.w && y >= bnext.y && y <= bnext.y + bnext.h) {
+                    if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "next", (char *)NULL); _exit(1); }
+                    set_status("下一首"); preview_quick();
                 }
             }
         }
@@ -450,6 +542,23 @@ int main(void) {
             pthread_mutex_unlock(&mu);
         }
 
+        if (drag_hidden && SDL_GetTicks() - last_move_tick > 300) {
+            drag_hidden = 0;
+            sync_scrcpy(0, 0);
+            int r = system("xdotool windowmap $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+        }
+        static Uint32 last_move = 0;
+        static int last_wx = -99999, last_wy = -99999;
+        Uint32 tick = SDL_GetTicks();
+        if (tick - last_move > 200) {
+            last_move = tick;
+            int wx = 0, wy = 0;
+            SDL_GetWindowPosition(win, &wx, &wy);
+            if (wx != last_wx || wy != last_wy) {
+                last_wx = wx; last_wy = wy;
+                sync_scrcpy(wx, wy);
+            }
+        }
         static double dbg_t = 0;
         if (getenv("VOICE_DEBUG") && now_s() - dbg_t > 1.0) {
             dbg_t = now_s();
@@ -465,13 +574,13 @@ int main(void) {
         SDL_SetRenderDrawColor(ren, 48, 52, 60, 255); SDL_RenderFillRect(ren, &micbtn);
         text(ren, small, "换麦", micbtn.x + 22, micbtn.y + 5, white);
 
-        SDL_Rect lvl = { 40, 150, W - 160, 18 };
+        SDL_Rect lvl = { 40, 150, LW - 160, 18 };
         SDL_SetRenderDrawColor(ren, 40, 44, 52, 255); SDL_RenderFillRect(ren, &lvl);
         int lw = (int)(speech_rms / 2000.0 * lvl.w); if (lw > lvl.w) lw = lvl.w; if (lw < 0) lw = 0;
         SDL_Rect lv2 = { lvl.x, lvl.y, lw, lvl.h };
         SDL_SetRenderDrawColor(ren, recording ? 200 : 70, recording ? 90 : 150, 110, 255); SDL_RenderFillRect(ren, &lv2);
         snprintf(buf, sizeof buf, "%s", recording ? "● 在听" : (paused ? "暂停" : "待唤醒"));
-        text(ren, small, buf, W - 110, 148, recording ? green : gray);
+        text(ren, small, buf, LW - 110, 148, recording ? green : gray);
 
         pthread_mutex_lock(&mu); snprintf(buf, sizeof buf, "%s", status); pthread_mutex_unlock(&mu);
         text(ren, font, buf, 40, 190, blue);
@@ -482,13 +591,60 @@ int main(void) {
         int start = nl > 14 ? nl - 14 : 0;
         for (int i = start; i < nl; i++) text(ren, small, lines[i], 40, 230 + (i - start) * 20, white);
 
-        SDL_Rect ibox = { 40, H - 88, W - 80, 34 };
+        SDL_SetRenderDrawColor(ren, 58, 92, 140, 255);
+        SDL_RenderFillRect(ren, &bvoldown);
+        text(ren, small, "音量 -", bvoldown.x + 72, bvoldown.y + 6, white);
+        SDL_SetRenderDrawColor(ren, 54, 128, 100, 255);
+        SDL_RenderFillRect(ren, &bvolup);
+        text(ren, small, "音量 +", bvolup.x + 72, bvolup.y + 6, white);
+        SDL_SetRenderDrawColor(ren, 70, 76, 96, 255);
+        SDL_RenderFillRect(ren, &bprev);
+        SDL_SetRenderDrawColor(ren, 104, 82, 148, 255);
+        SDL_RenderFillRect(ren, &bplay);
+        SDL_SetRenderDrawColor(ren, 70, 76, 96, 255);
+        SDL_RenderFillRect(ren, &bnext);
+        text(ren, small, "上一首", bprev.x + 34, bprev.y + 6, white);
+        text(ren, small, "暂停/播放", bplay.x + 26, bplay.y + 6, white);
+        text(ren, small, "下一首", bnext.x + 34, bnext.y + 6, white);
+
+        SDL_Rect ibox = { 40, H - 88, LW - 80, 34 };
         SDL_SetRenderDrawColor(ren, 40, 44, 52, 255); SDL_RenderFillRect(ren, &ibox);
         snprintf(buf, sizeof buf, "%s|", input);
         text(ren, small, buf, 48, H - 82, white);
         SDL_SetRenderDrawColor(ren, 48, 52, 60, 255); SDL_RenderFillRect(ren, &pausebtn);
         text(ren, small, paused ? "继续监听" : "暂停监听", pausebtn.x + 20, pausebtn.y + 5, green);
 
+        // 右侧：当前应用截图预览
+        SDL_Rect panel = { LW, 0, W - LW, H };
+        SDL_SetRenderDrawColor(ren, 16, 18, 22, 255);
+        SDL_RenderFillRect(ren, &panel);
+        SDL_SetRenderDrawColor(ren, 40, 44, 52, 255);
+        SDL_RenderDrawLine(ren, LW, 0, LW, H);
+        text(ren, small, "当前应用", LW + 16, 12, gray);
+        struct stat pst;
+        if (stat("/tmp/myagent_preview.png", &pst) == 0 && pst.st_mtime != preview_mtime) {
+            SDL_Surface *sf = IMG_Load("/tmp/myagent_preview.png");
+            if (sf) {
+                if (preview_tex) SDL_DestroyTexture(preview_tex);
+                preview_tex = SDL_CreateTextureFromSurface(ren, sf);
+                if (preview_tex) SDL_SetTextureScaleMode(preview_tex, SDL_ScaleModeLinear);
+                SDL_FreeSurface(sf);
+                preview_mtime = pst.st_mtime;
+            }
+        }
+        if (preview_tex) {
+            int tw = 0, th = 0;
+            SDL_QueryTexture(preview_tex, NULL, NULL, &tw, &th);
+            float sc;
+            SDL_Rect dst;
+            sc = fmin((float)(PW - 16) / tw, (float)(H - 60) / th);
+            dst.w = (int)(tw * sc); dst.h = (int)(th * sc);
+            dst.x = LW + ((PW - 16) - dst.w) / 2;
+            dst.y = 40 + ((H - 60) - dst.h) / 2;
+            SDL_RenderSetClipRect(ren, &panel);
+            SDL_RenderCopy(ren, preview_tex, NULL, &dst);
+            SDL_RenderSetClipRect(ren, NULL);
+        }
         SDL_RenderPresent(ren);
         SDL_Delay(16);
     }
