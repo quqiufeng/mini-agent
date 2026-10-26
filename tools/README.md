@@ -24,18 +24,21 @@ tools/chrome.sh shot https://example.com /tmp/x.png
 tools/chrome.sh cdp 9222
 tools/google_search.sh "关键词"   # 本机 Chrome CDP 搜 Google
 tools/deepseek_search.sh "关键词" # DeepSeek Search API
-tools/phone_music.sh play     # 手机汽水音乐 → 小音响
-tools/phone_audio.sh status   # 手机音频转发状态
 tools/tv_play.sh 寒战         # 电视 VLC 直连 NAS 播放（本机只做遥控）
 tools/tv_play.sh --find 寒战  # 只搜路径不播放
 tools/tv_play.sh stop         # 停止电视播放
+tools/tv_on.sh                 # 唤醒电视并切到 Android 首页
+tools/tv_on.sh --input hdmi3   # 切回 HDMI3
+tools/media.sh play 周杰伦     # NAS 搜索歌曲/美剧/电影 → 本机 VLC → USB 小音箱
+tools/media.sh play 硅谷 --fullscreen  # 视频全屏到电视
+tools/media.sh stop            # 停止播放
 tools/tencent.sh 寒战         # 电视腾讯视频按首字母搜索（默认只搜不播）
 tools/tencent.sh 寒战 --play  # 搜索并播放第一集
 tools/tencent.sh 伟大的长征 --expect 伟大的长征  # 逐字母 OCR 校验 + 详情页标题校验
 tools/netmap.sh scan          # 扫描本机局域网，生成 NETWORK.local.md / devices.local.*
 tools/netmap.sh show          # 查看上次拓扑
 tools/netmap.sh sources       # 输出 NETMAP_*_IP 变量
-tools/remote.sh now           # 调远程 now.sh
+tools/remote.sh netmap show   # 调远程 netmap.sh
 ```
 
 新增：

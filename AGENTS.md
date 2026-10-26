@@ -58,7 +58,7 @@ adb devices -l
 adb -s 192.168.1.110:5555 shell '...'
 ```
 
-- 唤醒：`input keyevent 224`
+- 打开电视：`tools/tv_on.sh`；关闭/待机：`tools/tv_on.sh --off`；切输入：`tools/tv_on.sh --input hdmi3`
 - 切 HDMI2 / HDMI3：`input keyevent 244` / `245`
 - 查看当前输入：`dumpsys tv_input | grep -E 'mainSessionToken|hdmi_port'`
   （`HW4 + hdmi_port=3` 表示当前在 HDMI3）
@@ -70,6 +70,9 @@ adb -s 192.168.1.110:5555 shell '...'
 - 限制：切到 HDMI 输入后 `screencap` 返回 0 字节，`screenrecord` 无有效帧，无法用 adb 抓 HDMI 画面
 
 显示设置路径：设置 → 显示 → 屏幕设定（16:9、自动显示区域、显示区域=全像素）。
+
+**HDMI 过扫描（顶部/边缘被切）**：电视默认对 HDMI 做过扫描。优先在电视里设「显示区域=全像素」并关闭「自动显示区域」；临时也可在本机补偿：
+`xrandr --output HDMI-1 --transform 0.97,0,0.015,0,0.97,0.015,0,0,1`（恢复：`--transform none`）。
 
 ### 2.5.1 电视直连 NAS 播放（首选）
 
@@ -196,7 +199,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 语音/微信：`tools/say.sh`、`tools/voices.sh`、`tools/wechat_send.sh`、`tools/wechat_send_file.sh`。
 - 媒体/家居/手机/Kindle：`music.sh`、`tv.sh`、`camera.sh`、`photo.sh`、`phone.sh`、`ebook.sh`、`vacuum.sh`、`detect.sh`。
 - 网络拓扑：远程用 `ssh quqiufeng@192.168.1.10 '/opt/my-agent/operator/tools/netmap.sh scan'`（生成 `operator/devices.json`、`NETWORK.md`、`devices.env`）；本机用 `tools/netmap.sh scan`。
-- 手机音频：`phone_music.sh play|stop`（汽水音乐）、`phone_audio.sh start|stop|status`（scrcpy 转发到小音响）。
+- 手机：远程 `operator/tools/phone.sh status|screen|tap|type|open ...`（本机 `tools/remote.sh phone ...`）；旧的 phone_music/phone_audio 已随远程移除。
 - 内容/数据/搜索：`image.sh`、`img_video.sh`、`video_dub.sh`、`lora.sh`、`stock.sh`、`dash.sh`、`google_search.sh`、`git_trending.sh`、`weibo_*.sh`、`douyin.sh`。
 - 集群/会话：`remote.sh`；启动大脑：`operator/start.sh`（通常已在跑，不要随意重启）。
 
@@ -236,7 +239,7 @@ echo $! > /tmp/opencode/vlc.pid
 ### 5.1 运行
 
 - 目录：`~/my-agent`
-- 启动：`./start.sh` —— 用 LuaJIT FFI（libxdo）打开**一个** qterminal 标签并键入 tmux 命令：
+- 启动：`./start.sh` —— tmux 起 `serve`/`tui`，再打开**一个专用 qterminal 窗口**显示 TUI（已有客户端不重复开窗）：
   - tmux 窗口 `0:serve` → `opencode serve --port 4097`
   - tmux 窗口 `1:tui` → `opencode attach http://127.0.0.1:4097`（TUI，默认停在这里）
 - tmux 窗口就是标签（状态栏 `0:serve 1:tui`），`Ctrl+B n/p` 切换；会话设了 `destroy-unattached`，关掉终端即销毁，不留后台。
@@ -253,6 +256,12 @@ echo $! > /tmp/opencode/vlc.pid
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
 
+### 5.1.2 能力与权限（靠 AGENTS.md）
+
+- 不靠 `opencode.json`：权限与动作由本文档约定——大脑只调用**已实现的工具脚本** `tools/*.sh`，不临时拼 shell、不绕过工具。
+- 新增能力 = 新增 `tools/<name>.sh`（头部写 `@desc`/`@usage`），并在本文档登记；大脑启动时读取本文档。
+- 改 `AGENTS.md` 后需重启大脑（`./stop.sh && ./start.sh`）才生效。
+
 ### 5.2 本地能力边界
 
 **本地直接做：**
@@ -265,7 +274,9 @@ echo $! > /tmp/opencode/vlc.pid
 - 本地搜索（`google_search.sh` 本机 Chrome CDP；`deepseek_search.sh` DeepSeek Search API）
 - Chrome 156 + CDP/headless（网页打开、DOM/截图、CDP 9222；`tools/chrome.sh`）
 - ADB 控制电视、HDMI 切换、截图、xdotool 窗口操作
+- 电视：`tools/tv_on.sh`（开）/ `tools/tv_on.sh --off`（关/待机）/ `tools/tv_on.sh --input hdmi3`
 - 局域网扫描/拓扑：`tools/netmap.sh scan|show|sources`（UDP 触发 ARP + 端口探测，约 4 秒）
+- 媒体：`tools/media.sh play|list|stop|status <关键词> [--fullscreen]`（NAS 搜索 + 本机 VLC；音频→USB 小音箱，视频→本机/电视 HDMI；不走远程）
 - 本地 tmux + opencode 大脑
 
 **本地做不了，走远程：**
@@ -281,7 +292,7 @@ echo $! > /tmp/opencode/vlc.pid
 - **本机做不了的**：用 `tools/remote.sh <name> [args...]` 调用远程
   `/opt/my-agent/operator/tools/<name>.sh`。
 - `tools/list.sh` 列出本地工具；`tools/now.sh` 是本地示例；
-  `tools/remote.sh now` 是远程示例。
+  `tools/remote.sh netmap show` 是远程示例。
 - `tools/tts.sh "文本"`：只调远程 `operator/tools/living_audio.sh say`；远程合成后自己 scp 到本机 `/tmp/living-audio-say.wav` 并播放，本地不做额外处理。
 - `tools/asr.sh <本地音频>`：本地音频 scp 到远程，调 `voice/listen.sh --file` 识别并返回文本。
 - 注意：远程 `voice/say.sh` 默认播放到远程自己的 sink；要让全屋小音响发声，用 `operator/tools/living_audio.sh`。
@@ -290,7 +301,8 @@ echo $! > /tmp/opencode/vlc.pid
 - `tools/chrome.sh open <url>` / `dump <url>` / `shot <url> <out.png>` / `cdp [port]`：本地 Chrome 网页、headless DOM/截图、CDP（默认 9222，profile `~/.chrome-debug`）。已验证 Chrome 156 + CDP 可用。
 - `tools/google_search.sh "关键词" [count]`：本机 Chrome CDP 打开 Google，输出结果正文和外部链接；headless 会被 CAPTCHA，必须 headful。
 - `tools/deepseek_search.sh "关键词" [count]`：调 DeepSeek Search API，输出标题/链接/摘要。
-- `tools/phone_music.sh play|stop`：手机汽水音乐；`tools/phone_audio.sh start|stop|status`：手机音频经 scrcpy 转发到 3.5mm 小音响。
+- 手机操作走 `tools/remote.sh phone status|screen|tap|type|open ...`；`phone_music.sh`/`phone_audio.sh` 已停用。
+- `tools/media.sh play <歌手/歌名/美剧/电影>`：NAS 搜索 + 本机 VLC；音频走 USB 小音箱，视频默认窗口、加 `--fullscreen` 投到电视（HDMI3）；`list|stop|status`。说“放歌/播放周杰伦/放硅谷”用它，不要走远程。
 - `tools/netmap.sh scan|show|sources`：本机扫 192.168.1.0/24，输出 `NETWORK.local.md`、`devices.local.json`、`devices.local.env`（`NETMAP_*_IP`）。
 - `tools/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。
 - 回环测试：`tts.sh` → 小音响 → `record_mic.sh` → `asr.sh` 已验证可行。音量有三层：音响物理旋钮、本机 OS 音量（PipeWire/Pulse）、ALSA PCM。`tts.sh` 默认用 `SMALLPC_AOUT=pulse`，因此 OS 音量可调；100% + 麦克风增益最大容易削波，回环时建议适当降低。短句识别准确，长句可能有误差。

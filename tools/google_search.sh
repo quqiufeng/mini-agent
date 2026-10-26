@@ -43,7 +43,7 @@ url = "https://www.google.com/search?" + urllib.parse.urlencode({
 
 req = urllib.request.Request(f"http://127.0.0.1:{port}/json/new?about:blank", method="PUT")
 target = json.load(urllib.request.urlopen(req, timeout=10))
-ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=20)
+ws = websocket.create_connection(target["webSocketDebuggerUrl"], timeout=20, suppress_origin=True)
 
 def call(mid, method, params=None):
     ws.send(json.dumps({"id": mid, "method": method, "params": params or {}}))

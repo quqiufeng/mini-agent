@@ -13,7 +13,7 @@ if [ -z "$SRC" ]; then
 fi
 [ -n "$SRC" ] || SRC="@DEFAULT_SOURCE@"
 
-timeout "$SECS" parecord --device="$SRC" --format=s16le --rate=16000 --channels=1 \
+timeout "$SECS" parecord --device="$SRC" --format=s24le --rate=48000 --channels=1 \
   --file-format=wav "$OUT" >/tmp/myagent-record.log 2>&1 || true
 
 [ -s "$OUT" ] || {

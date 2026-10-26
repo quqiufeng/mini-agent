@@ -46,6 +46,7 @@ case "$cmd" in
     [[ "$PORT" =~ ^[0-9]+$ ]] || { echo "非法端口: $PORT" >&2; exit 2; }
     PROFILE="${CDP_PROFILE:-$HOME/.chrome-debug}"
     exec google-chrome --remote-debugging-port="$PORT" \
+      --remote-allow-origins='*' \
       --user-data-dir="$PROFILE" \
       --no-first-run --no-default-browser-check \
       --new-window about:blank

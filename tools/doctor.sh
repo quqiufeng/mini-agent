@@ -54,10 +54,11 @@ fi
 
 echo
 echo "== 远程 =="
-if "$DIR/remote.sh" now >/tmp/myagent-doctor-remote.log 2>&1; then
-  echo "OK   remote now: $(tail -1 /tmp/myagent-doctor-remote.log)"
+HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
+if ssh -o BatchMode=yes -o ConnectTimeout=5 "$HOST" 'test -x /opt/my-agent/operator/tools/netmap.sh' >/dev/null 2>&1; then
+  echo "OK   ssh $HOST + 远程工具存在"
 else
-  echo "FAIL remote now（检查 SSH/REMOTE_HOST）"
+  echo "FAIL 远程（检查 SSH/REMOTE_HOST）"
   fail=1
 fi
 
