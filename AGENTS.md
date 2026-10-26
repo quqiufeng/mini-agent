@@ -199,7 +199,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 语音/微信：`tools/say.sh`、`tools/voices.sh`、`tools/wechat_send.sh`、`tools/wechat_send_file.sh`。
 - 媒体/家居/手机/Kindle：`music.sh`、`tv.sh`、`camera.sh`、`photo.sh`、`phone.sh`、`ebook.sh`、`vacuum.sh`、`detect.sh`。
 - 网络拓扑：远程用 `ssh quqiufeng@192.168.1.10 '/opt/my-agent/operator/tools/netmap.sh scan'`（生成 `operator/devices.json`、`NETWORK.md`、`devices.env`）；本机用 `tools/netmap.sh scan`。
-- 手机：远程 `operator/tools/phone.sh status|screen|tap|type|open ...`（本机 `tools/remote.sh phone ...`）；旧的 phone_music/phone_audio 已随远程移除。
+- 手机：本机 USB ADB 直控（`adb`）；汽水音乐 `tools/phone_music.sh play|stop`（scrcpy 音频 → USB 小音箱）；远程 `operator/tools/phone.sh` 仍可用。
 - 内容/数据/搜索：`image.sh`、`img_video.sh`、`video_dub.sh`、`lora.sh`、`stock.sh`、`dash.sh`、`google_search.sh`、`git_trending.sh`、`weibo_*.sh`、`douyin.sh`。
 - 集群/会话：`remote.sh`；启动大脑：`operator/start.sh`（通常已在跑，不要随意重启）。
 
@@ -255,6 +255,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 构建：`make -C gui/sdl`；运行：`gui/launch.sh`；桌面项 `~/.local/share/applications/myagent-voice.desktop`（`Terminal=false`）。
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
+- **开发者模式**：语音以「开发者模式」开头（如「你好星期五，开发者模式 只回复OK」）→ 删掉“开发者模式”，余下文本由 `tools/tui_type.sh` 直接粘贴进大脑 TUI 并回车（绕过语音转发/工具规则）。
 
 ### 5.1.2 能力与权限（靠 AGENTS.md）
 
@@ -276,7 +277,8 @@ echo $! > /tmp/opencode/vlc.pid
 - ADB 控制电视、HDMI 切换、截图、xdotool 窗口操作
 - 电视：`tools/tv_on.sh`（开）/ `tools/tv_on.sh --off`（关/待机）/ `tools/tv_on.sh --input hdmi3`
 - 局域网扫描/拓扑：`tools/netmap.sh scan|show|sources`（UDP 触发 ARP + 端口探测，约 4 秒）
-- 媒体：`tools/media.sh play|list|stop|status <关键词> [--fullscreen]`（NAS 搜索 + 本机 VLC；音频→USB 小音箱，视频→本机/电视 HDMI；不走远程）
+- 音量：`tools/volume.sh up|down|mute|set <0-153>|status`（USB 小音箱 + 电视同步）
+- 媒体：`tools/media.sh play|list|stop|status <关键词> [--fullscreen]`（NAS 搜索 + 本机 VLC；音频→USB 小音箱，默认随机 5 首（`MEDIA_PICK` 可调）；视频→本机/电视 HDMI；不走远程）
 - 本地 tmux + opencode 大脑
 
 **本地做不了，走远程：**
@@ -301,7 +303,8 @@ echo $! > /tmp/opencode/vlc.pid
 - `tools/chrome.sh open <url>` / `dump <url>` / `shot <url> <out.png>` / `cdp [port]`：本地 Chrome 网页、headless DOM/截图、CDP（默认 9222，profile `~/.chrome-debug`）。已验证 Chrome 156 + CDP 可用。
 - `tools/google_search.sh "关键词" [count]`：本机 Chrome CDP 打开 Google，输出结果正文和外部链接；headless 会被 CAPTCHA，必须 headful。
 - `tools/deepseek_search.sh "关键词" [count]`：调 DeepSeek Search API，输出标题/链接/摘要。
-- 手机操作走 `tools/remote.sh phone status|screen|tap|type|open ...`；`phone_music.sh`/`phone_audio.sh` 已停用。
+- 手机操作：本机 `adb`（Z18 USB）；汽水音乐 `tools/phone_music.sh play|stop`；`phone_audio.sh` 同义。
+- `tools/volume.sh up|down|mute|set <0-153>|status`：调 USB 小音箱音量，电视醒着时同步按音量键（待机不动，避免点亮电视）。说“声音大一点/小一点/静音”→ 用它。
 - `tools/media.sh play <歌手/歌名/美剧/电影>`：NAS 搜索 + 本机 VLC；音频走 USB 小音箱，视频默认窗口、加 `--fullscreen` 投到电视（HDMI3）；`list|stop|status`。说“放歌/播放周杰伦/放硅谷”用它，不要走远程。
 - `tools/netmap.sh scan|show|sources`：本机扫 192.168.1.0/24，输出 `NETWORK.local.md`、`devices.local.json`、`devices.local.env`（`NETMAP_*_IP`）。
 - `tools/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。

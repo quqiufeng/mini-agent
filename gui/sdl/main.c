@@ -18,6 +18,7 @@
 #define FONT "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 #define ASR_BIN ROOT "/tools/asr.sh"
 #define SEND_BIN ROOT "/send.sh"
+#define TUI_BIN ROOT "/tools/tui_type.sh"
 #define TTS_BIN ROOT "/tools/tts.sh"
 #define ACK_WAV "/tmp/myagent_ack.wav"
 #define ACK_TXT "/tmp/myagent_ack.txt"
@@ -258,6 +259,24 @@ static void *worker(void *arg) {
 
         char rest[1024];
         int woke = strip_wake(text, rest, sizeof rest);
+
+        // 开发者模式：文本以「开发者模式」开头 → 删掉该词，余下文本直接键入大脑 TUI
+        {
+            const char *DEV = "开发者模式";
+            size_t dl = strlen(DEV);
+            char devbuf[1024] = "";
+            if (strncmp(norm, DEV, dl) == 0) snprintf(devbuf, sizeof devbuf, "%s", norm + dl);
+            else if (woke && strncmp(rest, DEV, dl) == 0) snprintf(devbuf, sizeof devbuf, "%s", rest + dl);
+            if (devbuf[0]) {
+                char line[1100]; snprintf(line, sizeof line, "开发者: %s", devbuf);
+                add_line(line);
+                set_status("开发者模式 → TUI");
+                char *targv[] = { TUI_BIN, devbuf, NULL };
+                int trc = 0; char *tout = run_capture(targv, &trc); free(tout);
+                set_status(trc == 0 ? "已输入 TUI" : "TUI 输入失败");
+                continue;
+            }
+        }
         static double active_ms = 0;
         if (active_ms <= 0) { const char *v = getenv("VOICE_ACTIVE_MS"); active_ms = v ? atof(v) : 10000; }
         if (woke) {

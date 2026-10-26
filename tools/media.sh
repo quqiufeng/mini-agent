@@ -24,22 +24,34 @@ ensure_mount() {
 }
 
 search() {
-    local root="$1" kw="$2" f g d
-    # 音乐（单层目录，直接 glob，快）
-    for f in "$root/mp3/无损"/*; do
-        [ -f "$f" ] && printf '%s\n' "$f"
-    done | grep -F "$kw"
-    # 影视（两级 glob：剧名目录/季目录/文件）
-    for d in "$root"/*/; do
-        case "$d" in */mp3/) continue ;; esac
-        for f in "$d"*; do
-            if [ -f "$f" ]; then
-                printf '%s\n' "$f"
-            elif [ -d "$f" ]; then
-                for g in "$f"/*; do [ -f "$g" ] && printf '%s\n' "$g"; done
-            fi
+    local root="$1" kw="$2"
+    local base="$root/mp3/无损" name e f
+    # 音乐：一次 readdir + grep，按文件名命中
+    local names mhits
+    names=$(ls -1 "$base" 2>/dev/null)
+    mhits=$(printf '%s\n' "$names" | grep -F "$kw")
+    if [ -n "$mhits" ]; then
+        printf '%s\n' "$mhits" | while IFS= read -r name; do
+            [ -n "$name" ] && printf '%s/%s\n' "$base" "$name"
         done
-    done | grep -iE "\.($VIDEO_EXT|$AUDIO_EXT)$" | grep -F "$kw"
+        return
+    fi
+    # 影视：只展开目录名命中的剧/电影（两层 ls，避免全库 stat）
+    while IFS= read -r name; do
+        case "$name" in *"$kw"*) ;; *) continue ;; esac
+        local d="$root/$name"
+        [ -d "$d" ] || continue
+        while IFS= read -r e; do
+            [ -z "$e" ] && continue
+            if [ -d "$d/$e" ]; then
+                while IFS= read -r f; do
+                    [ -n "$f" ] && printf '%s/%s/%s\n' "$d" "$e" "$f"
+                done < <(ls -1 "$d/$e" 2>/dev/null)
+            else
+                printf '%s/%s\n' "$d" "$e"
+            fi
+        done < <(ls -1 "$d" 2>/dev/null)
+    done < <(ls -1 "$root" 2>/dev/null) | grep -iE "\.($VIDEO_EXT|$AUDIO_EXT)$"
 }
 
 cmd="${1:-}"; shift || true
@@ -64,6 +76,12 @@ case "$cmd" in
                 *.mkv|*.mp4|*.avi|*.ts|*.mov|*.m2ts|*.wmv|*.rmvb) is_audio=0; break ;;
             esac
         done
+        if [ "$is_audio" = "1" ]; then
+            pick="${MEDIA_PICK:-5}"
+            if [ "${#files[@]}" -gt "$pick" ]; then
+                mapfile -t files < <(printf '%s\n' "${files[@]}" | shuf -n "$pick")
+            fi
+        fi
         args=(--no-video-title-show --play-and-exit)
         [ "${1:-}" = "--fullscreen" ] && args+=(--fullscreen)
         [ "$is_audio" = "1" ] && args+=(--no-video)

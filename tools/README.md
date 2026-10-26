@@ -32,6 +32,8 @@ tools/tv_on.sh --input hdmi3   # 切回 HDMI3
 tools/media.sh play 周杰伦     # NAS 搜索歌曲/美剧/电影 → 本机 VLC → USB 小音箱
 tools/media.sh play 硅谷 --fullscreen  # 视频全屏到电视
 tools/media.sh stop            # 停止播放
+tools/volume.sh up / down      # 调 USB 小音箱 + 电视音量
+tools/volume.sh mute           # 静音切换
 tools/tencent.sh 寒战         # 电视腾讯视频按首字母搜索（默认只搜不播）
 tools/tencent.sh 寒战 --play  # 搜索并播放第一集
 tools/tencent.sh 伟大的长征 --expect 伟大的长征  # 逐字母 OCR 校验 + 详情页标题校验
