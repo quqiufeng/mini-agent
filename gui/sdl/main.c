@@ -477,10 +477,10 @@ int main(void) {
                 else if (x >= pausebtn.x && x <= pausebtn.x + pausebtn.w && y >= pausebtn.y && y <= pausebtn.y + pausebtn.h) {
                     paused = !paused; set_status(paused ? "已暂停" : "待唤醒");
                 } else if (x >= bvoldown.x && x <= bvoldown.x + bvoldown.w && y >= bvoldown.y && y <= bvoldown.y + bvoldown.h) {
-                    if (fork() == 0) { execl(ROOT "/tools/volume.sh", "volume.sh", "down", (char *)NULL); _exit(1); }
+                    if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/tools/volume.sh", "volume.sh", "down", (char *)NULL); _exit(1); }
                     set_status("音量 -");
                 } else if (x >= bvolup.x && x <= bvolup.x + bvolup.w && y >= bvolup.y && y <= bvolup.y + bvolup.h) {
-                    if (fork() == 0) { execl(ROOT "/tools/volume.sh", "volume.sh", "up", (char *)NULL); _exit(1); }
+                    if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/tools/volume.sh", "volume.sh", "up", (char *)NULL); _exit(1); }
                     set_status("音量 +");
                 } else if (x >= bprev.x && x <= bprev.x + bprev.w && y >= bprev.y && y <= bprev.y + bprev.h) {
                     if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "prev", (char *)NULL); _exit(1); }

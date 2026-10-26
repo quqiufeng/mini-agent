@@ -2,6 +2,7 @@
 # @desc 打开电视：ADB 唤醒并切到 Android 电视界面（默认）；也可切 HDMI 输入
 # @usage tools/tv_on.sh                 # 唤醒 + Android 首页
 #        tools/tv_on.sh --off           # 待机/关闭电视
+#        tools/tv_on.sh --desktop       # 电视开机 + 切 HDMI3（显示本机桌面）
 #        tools/tv_on.sh --input hdmi3   # 切 HDMI3（本机桌面）
 #        tools/tv_on.sh --input tv      # 回 Android 首页
 # @rule 用户说“打开电视/开电视”→ tools/tv_on.sh；说“切回 HDMI3”→ tools/tv_on.sh --input hdmi3
@@ -11,6 +12,17 @@ ADB=(adb -s "$SERIAL")
 
 "${ADB[@]}" connect "$SERIAL" >/dev/null 2>&1 || true
 
+if [ "${1:-}" = "--desktop" ]; then
+  # 打开桌面：唤醒电视 + 切 HDMI3（本机桌面）
+  "${ADB[@]}" shell input keyevent 224
+  sleep 1
+  "${ADB[@]}" shell input keyevent 245
+  sleep 1
+  export DISPLAY="${DISPLAY:-:0}" XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
+  xset dpms force on >/dev/null 2>&1 || true
+  echo "已打开桌面：电视开机 + HDMI3"
+  exit 0
+fi
 if [ "${1:-}" = "--off" ]; then
   "${ADB[@]}" shell input keyevent 26
   sleep 1

@@ -14,6 +14,7 @@ sink_set() {
     pactl set-sink-volume @DEFAULT_SINK@ "$1%" 2>/dev/null || true
 }
 tv_awake() {
+    [ "${VOLUME_NO_TV:-0}" = "1" ] && return 1
     adb -s "$TV" shell 'dumpsys power | grep -m1 mWakefulness' 2>/dev/null | grep -q 'Awake'
 }
 

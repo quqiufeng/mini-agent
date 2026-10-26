@@ -48,6 +48,14 @@
 - 已安装 `adb`（1.0.41 / 34.0.4）。电视 `192.168.1.110:5555` 已授权：
   `Sony BRAVIA 4K GB`（`BRAVIA_ATV2_CN`），Android 8.0.0。
 
+### 2.4.1 主电脑桌面（noVNC）
+
+- 远程 `192.168.1.10:5900` 是它的 x11vnc；本机用 **noVNC** 看，等比缩放到窗口、无滚动条。
+- 启动代理：`websockify --web /usr/share/novnc 6080 192.168.1.10:5900`
+- 打开：`google-chrome --app='http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale' --start-fullscreen`
+- 桌面图标「主电脑桌面」→ `~/.local/bin/open-mainpc-vnc.sh`（自动起 websockify + Chrome app）。
+- 不用 TigerVNC 1.13：它不支持缩放，2560×1440 远程在 1920×1080 本机会有滚动条。
+
 ### 2.5 用 ADB 控制 Sony 电视
 
 连接与常用命令：
@@ -281,7 +289,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 本地搜索（`google_search.sh` 本机 Chrome CDP；`deepseek_search.sh` DeepSeek Search API）
 - Chrome 156 + CDP/headless（网页打开、DOM/截图、CDP 9222；`tools/chrome.sh`）
 - ADB 控制电视、HDMI 切换、截图、xdotool 窗口操作
-- 电视：`tools/tv_on.sh`（开）/ `tools/tv_on.sh --off`（关/待机）/ `tools/tv_on.sh --input hdmi3`
+- 电视：`tools/tv_on.sh`（开）/ `tools/tv_on.sh --off`（关/待机）/ `tools/tv_on.sh --input hdmi3`；说“打开桌面”→ `tools/tv_on.sh --desktop`（开机+切 HDMI3）；说“打开远程桌面”→ `tools/remote_desktop.sh`（开机+HDMI3+noVNC 主电脑）
 - 局域网扫描/拓扑：`tools/netmap.sh scan|show|sources`（UDP 触发 ARP + 端口探测，约 4 秒）
 - 音量：`tools/volume.sh up|down|mute|set <0-153>|status`（USB 小音箱 + 电视同步）
 - 媒体：`tools/media.sh play|list|stop|status <关键词> [--fullscreen]`（NAS 搜索 + 本机 VLC；音频→USB 小音箱，默认随机 5 首（`MEDIA_PICK` 可调）；视频→本机/电视 HDMI；不走远程）
