@@ -39,7 +39,7 @@ case "${1:-}" in
     stop)
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             kill "$(cat "$PIDFILE")" 2>/dev/null || true
-            rm -f "$PIDFILE"
+            rm -f "$PIDFILE" /tmp/myagent_mirror.id
         fi
         s=$(serial)
         [ -n "$s" ] && adb -s "$s" shell 'input keyevent 127' >/dev/null 2>&1 || true

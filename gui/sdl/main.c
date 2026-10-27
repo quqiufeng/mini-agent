@@ -461,6 +461,7 @@ int main(void) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     if (TTF_Init() != 0) { fprintf(stderr, "TTF_Init: %s\n", TTF_GetError()); return 1; }
     IMG_Init(IMG_INIT_PNG);
+    unlink("/tmp/myagent_mirror.id");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
     if (chdir(ROOT) != 0) {}
     SDL_Window *win = SDL_CreateWindow("My Agent · 语音", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_SHOWN);
