@@ -37,6 +37,8 @@ print("sent")
 PY
 
 if [ "${SPEAK_REPLY:-0}" = "1" ]; then
+  echo "$(date '+%F %T') spawn speak: $TEXT" >>/tmp/myagent-send.log
   setsid nohup "$DIR/spoken_reply.py" "$TEXT" "$START_MS" \
     >/tmp/myagent-speak.log 2>&1 </dev/null &
+  sleep 0.3
 fi
