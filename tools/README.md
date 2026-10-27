@@ -17,6 +17,10 @@ tools/list.sh                 # 列出本地工具
 tools/now.sh                  # 本机时间
 tools/tts.sh "你好"            # 本地 Kokoro 合成（失败回退远程）→ 小音响
 tools/asr.sh /tmp/x.wav       # 本地 SenseVoice.cpp 识别（失败回退远程）
+tools/ocr.sh /tmp/x.png       # 本地 PP-OCRv4 识别（失败回退远程）
+tools/alarm.sh in 10m "关火"   # 本地闹钟，到点语音提醒 5 遍；at 7:30 起床
+tools/phone2.sh status         # 第二台 Redmi 手机：mDNS 自动连无线调试
+tools/phone2.sh open wechat    # 打开微信；text 输入中文；shot 截图
 tools/spectrum.sh 32 30       # USB 麦克风频谱流（JSON Lines）
 tools/record_mic.sh 5 /tmp/x.wav  # 录 USB 麦克风到 WAV
 tools/chrome.sh open https://example.com
@@ -41,6 +45,7 @@ tools/tencent.sh 寒战 --play  # 搜索并播放第一集
 tools/tencent.sh 伟大的长征 --expect 伟大的长征  # 逐字母 OCR 校验 + 详情页标题校验
 tools/kws_keywords.py "你好星期五"  # 生成 KWS 拼音关键词
 tools/setup_local_voice.sh    # 安装本地 KWS/Kokoro/SenseVoice
+tools/setup_local_ocr.sh      # 安装本地 PP-OCRv4 + ONNX Runtime
 tools/netmap.sh scan          # 扫描本机局域网，生成 NETWORK.local.md / devices.local.*
 tools/netmap.sh show          # 查看上次拓扑
 tools/netmap.sh sources       # 输出 NETMAP_*_IP 变量

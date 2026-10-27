@@ -208,6 +208,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 媒体/家居/手机/Kindle：`music.sh`、`tv.sh`、`camera.sh`、`photo.sh`、`phone.sh`、`ebook.sh`、`vacuum.sh`、`detect.sh`。
 - 网络拓扑：远程用 `ssh quqiufeng@192.168.1.10 '/opt/my-agent/operator/tools/netmap.sh scan'`（生成 `operator/devices.json`、`NETWORK.md`、`devices.env`）；本机用 `tools/netmap.sh scan`。
 - 手机：本机 USB/Wi-Fi ADB 直控（`adb`）；IP 变了用 `tools/phone_ip.sh`（按 MAC `76:d0:b4:67:89:a9` 查 ARP + 扫 5555，校验型号 Z18）；汽水音乐 `tools/phone_music.sh play|stop`（scrcpy 音频 → USB 小音箱）；远程 `operator/tools/phone.sh` 仍可用。
+- 第二台手机：Redmi Note 14 5G（微信，`192.168.1.59`，无线调试端口随机）用 `tools/phone2.sh connect|status|shot|open|text|key|tap|apps`；端口变化由 mDNS 自动发现。
 - 内容/数据/搜索：`image.sh`、`img_video.sh`、`video_dub.sh`、`lora.sh`、`stock.sh`、`dash.sh`、`google_search.sh`、`git_trending.sh`、`weibo_*.sh`、`douyin.sh`。
 - 集群/会话：`remote.sh`；启动大脑：`operator/start.sh`（通常已在跑，不要随意重启）。
 
@@ -259,11 +260,12 @@ echo $! > /tmp/opencode/vlc.pid
 ### 5.1.1 语音 GUI（SDL2，本机）
 
 - `gui/sdl/`：C + SDL2/SDL2_ttf 小窗口；常驻采集 USB 麦克风（默认 Comica）→ **本地 sherpa-onnx KWS** 检测唤醒词；唤醒后才切句 → `tools/asr.sh`（本地 SenseVoice.cpp，失败回退远程）→ `tools/send.sh` 转发本地大脑。未唤醒时不做 ASR。
-- 本地唤醒词：`gui/kws/keywords.txt`（由 `tools/kws_keywords.py` 从 `VOICE_WAKE` 生成）；模型默认 `/opt/sherpa-onnx/models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01`，可用 `KWS_MODEL_DIR`/`KWS_THRESHOLD`/`KWS_SCORE` 覆盖。唤醒后 10 秒内的话直接当指令；VAD 阈值 `VOICE_RMS`。
+- 本地唤醒词：`gui/kws/keywords.txt`（由 `tools/kws_keywords.py` 从 `VOICE_WAKE` 生成）；模型默认 `/opt/sherpa-onnx/models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01`，可用 `KWS_MODEL_DIR`/`KWS_THRESHOLD`（默认 0.1）/`KWS_SCORE`（默认 3.0）覆盖。唤醒后 10 秒内的话直接当指令；VAD 阈值 `VOICE_RMS`。
 - 本地 TTS：`tools/tts.sh` 优先用 sherpa-onnx + Kokoro（`KOKORO_DIR`，默认 `/opt/sherpa-onnx/models/kokoro-multi-lang-v1_0`），失败回退远程。
 - 构建：`make -C gui/sdl`（静态链 LuaJIT + SDL，内嵌 `winctl.lua`/`xdo.lua`，`gui/lib/libxdo.so.3` 随包分发；KWS 链 `/opt/sherpa-onnx`，`make KWS=0` 可关闭；`--lua` 可当通用 Lua 运行器）；运行：`gui/launch.sh`；桌面项 `~/.local/share/applications/ai助手.desktop` 与桌面快捷方式 `~/Desktop/ai助手.desktop`。
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体；本地语音栈用 `tools/setup_local_voice.sh` 安装（sherpa-onnx、KWS/Kokoro 模型、SenseVoice.cpp CPU）。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
+- 语音回复：GUI 默认设 `SPEAK_REPLY=1`，`send.sh` 后台跑 `tools/spoken_reply.py` 从 opencode `/session` 抓取大脑短回复，用本地 TTS 朗读；`SPEAK_MAX` 默认 240 字，`VOICE_SPEAK_REPLY=0` 关闭。
 - 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `tools/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。
 - **开发者模式（简化）**：说「开发者 / 开发者模式」→ `tools/dev_tui.sh` 打开独立终端 `cd ~/my-agent && opencode`；50 秒窗口内（每次指令续期）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「退出开发者」关闭。
 
@@ -287,6 +289,8 @@ echo $! > /tmp/opencode/vlc.pid
 - USB 麦克风录音（`record_mic.sh`）、音频频谱（`spectrum.sh`）
 - USB 手机音频经 scrcpy 转发到 3.5mm 小音响（`phone_audio.sh`）
 - TTS/ASR 完全本地（`tts.sh` Kokoro、`asr.sh` SenseVoice.cpp；另有本地 KWS 唤醒）
+- 本地 OCR（PP-OCRv4，`tools/ocr.sh`，失败回退远程）
+- 本地闹钟（`tools/alarm.sh`，到点用标题语音提醒 5 遍）
 - 本地搜索（`google_search.sh` 本机 Chrome CDP；`deepseek_search.sh` DeepSeek Search API）
 - Chrome 156 + CDP/headless（网页打开、DOM/截图、CDP 9222；`tools/chrome.sh`）
 - ADB 控制电视、HDMI 切换、截图、xdotool 窗口操作
@@ -298,7 +302,7 @@ echo $! > /tmp/opencode/vlc.pid
 
 **本地做不了，走远程：**
 
-- 本地语音栈不可用时的远程 SenseVoice/Kokoro 兜底、微信 OCR/发送、GPU/大模型推理
+- 本地语音栈/OCR 不可用时的远程兜底、微信登录态 OCR/发送、GPU/大模型推理
 - 需要远程登录态/专用 Chrome MCP 的浏览器任务、媒体转码、手机/Kindle/摄像头/家居设备
 - 出图/动画/字幕/配音/LoRA、登录态搜索/内容抓取等
 
@@ -312,6 +316,9 @@ echo $! > /tmp/opencode/vlc.pid
   `tools/remote.sh netmap show` 是远程示例。
 - `tools/tts.sh "文本"`：优先本地 sherpa-onnx + Kokoro 合成并播放（`TTS_LOCAL=0` 或本地不可用时回退远程 `living_audio.sh say`）。
 - `tools/asr.sh <本地音频>`：优先本地 `SenseVoice.cpp`（自动转 16k 单声道，支持 24bit/48k），失败回退远程 `voice/listen.sh --file`。
+- `tools/ocr.sh <图片>`：优先本地 PP-OCRv4（`/opt/WordCard` + `/opt/onnxruntime-1.26.0`），失败回退远程 agentkit OCR；输出 JSON 文本框。`OCR_LOCAL=0` 强制远程。
+- `tools/setup_local_ocr.sh`：安装/升级本地 OCR 库、模型和 ONNX Runtime 1.26 CPU。
+- `tools/alarm.sh in <时长> <标题...>` / `at <HH:MM> <标题...>` / `list` / `cancel <id|all>` / `test`：本地闹钟，到点用标题语音提醒 5 遍；时长支持 `10m`/`1h30m`/`90s`/`1d`/`10分钟`，`at` 已过则排到明天；独立于 GUI/大脑，不跨重启。
 - `tools/kws_keywords.py "你好星期五,星期五"`：生成 sherpa-onnx 拼音 KWS 关键词（需 `python3-pypinyin`）。
 - `tools/setup_local_voice.sh`：安装/升级本地 KWS、Kokoro TTS、SenseVoice CPU ASR。
 - 注意：远程 `voice/say.sh` 默认播放到远程自己的 sink；要让全屋小音响发声，用 `operator/tools/living_audio.sh`。

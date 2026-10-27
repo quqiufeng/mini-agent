@@ -317,8 +317,8 @@ static int kws_init(void) {
     cfg.num_trailing_blanks = 1;
     const char *score = getenv("KWS_SCORE");
     const char *thr = getenv("KWS_THRESHOLD");
-    cfg.keywords_score = score ? (float)atof(score) : 1.0f;
-    cfg.keywords_threshold = thr ? (float)atof(thr) : 0.25f;
+    cfg.keywords_score = score ? (float)atof(score) : 3.0f;
+    cfg.keywords_threshold = thr ? (float)atof(thr) : 0.1f;
     cfg.keywords_file = k;
     g_kws = SherpaOnnxCreateKeywordSpotter(&cfg);
     if (!g_kws) { fprintf(stderr, "[kws] create failed\n"); return 0; }
@@ -656,6 +656,8 @@ int main(int argc, char **argv) {
         return run_embedded_winctl(argc >= 3 ? argv[2] : "", argc >= 4 ? argv[3] : NULL) == 0 ? 0 : 1;
     if (argc >= 2 && strcmp(argv[1], "--lua") == 0)
         return run_lua_cli(argc - 2, argv + 2);
+    if (!getenv("VOICE_SPEAK_REPLY") || strcmp(getenv("VOICE_SPEAK_REPLY"), "0") != 0)
+        setenv("SPEAK_REPLY", "1", 1);
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     if (TTF_Init() != 0) { fprintf(stderr, "TTF_Init: %s\n", TTF_GetError()); return 1; }
     IMG_Init(IMG_INIT_PNG);
@@ -808,9 +810,17 @@ int main(int argc, char **argv) {
                         if (quiet >= 19200) {
                             size_t a = seg_start, b = proc_pos + i + CH;
                             if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] flush len=%zu\n", b - a);
-                            if (b > a && b - a > 12800 &&
-                                (!g_kws_ready || active_until > now_s()))
-                                enqueue_segment(pcm + a, b - a);
+                            if (b > a && b - a > 12800) {
+                                if (!g_kws_ready || active_until > now_s())
+                                    enqueue_segment(pcm + a, b - a);
+                                else if (getenv("KWS_DUMP")) {
+                                    static int dump_n = 0;
+                                    char dp[80];
+                                    snprintf(dp, sizeof dp, "/tmp/myagent_kws_dump_%d.wav", ++dump_n);
+                                    wav_write(dp, pcm + a, b - a);
+                                    fprintf(stderr, "[kws] dump %s len=%zu\n", dp, b - a);
+                                }
+                            }
                             recording = 0; quiet = 0; seg_start = b;
                         }
                     }

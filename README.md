@@ -147,7 +147,7 @@ gui/launch.sh                                    # 说唤醒词测试 KWS
 |---|---|---|
 | `KWS_MODEL_DIR` | `/opt/sherpa-onnx/models/sherpa-onnx-kws-…` | KWS 模型目录 |
 | `KWS_KEYWORDS` | `gui/kws/keywords.txt` | 唤醒词文件 |
-| `KWS_THRESHOLD` / `KWS_SCORE` | `0.25` / `1.0` | 唤醒灵敏度 |
+| `KWS_THRESHOLD` / `KWS_SCORE` | `0.1` / `3.0` | 唤醒灵敏度（误唤醒多就调高阈值） |
 | `KOKORO_DIR` | `/opt/sherpa-onnx/models/kokoro-multi-lang-v1_0` | TTS 模型 |
 | `KOKORO_SID` / `TTS_THREADS` | `47` / `4` | 音色 / 线程 |
 | `SENSEVOICE_BIN` / `SENSEVOICE_MODEL` | `/opt/SenseVoice.cpp/…` | ASR 二进制 / GGUF |
@@ -156,6 +156,60 @@ gui/launch.sh                                    # 说唤醒词测试 KWS
 | `make KWS=0` | 开启 | 关闭本地 KWS，退回文本唤醒 |
 
 说明：模型合计约 600 MB；SenseVoice 首次运行会在其工作目录写 `fbank_lfr_cmvn_feature.json`（已加入 `.gitignore`）；本机 i5-2400 上 ASR 约 1–2 秒，Kokoro 短句约 6–8 秒，唤醒应答会在后台预合成。
+语音回复：GUI 提交指令后由 `tools/spoken_reply.py` 抓取大脑短回复并用本地 Kokoro 朗读；`VOICE_SPEAK_REPLY=0` 可关闭，`SPEAK_MAX` 控制最长朗读字数。
+
+## 本地 OCR（PP-OCRv4）
+
+`tools/ocr.sh <图片>` 默认本机识别，失败回退远程；输出 JSON 文本框数组。
+
+| 组件 | 默认路径 | 约 |
+|---|---|---|
+| 库 | `/opt/WordCard/voice/libs/libocr_simple.so` | 75 KB |
+| 模型 | `/opt/WordCard/models/ocr/`（det/rec/dict） | 15 MB |
+| 运行时 | `/opt/onnxruntime-1.26.0`（CPU） | 22 MB |
+| 依赖 | OpenCV 4 运行库 | 系统包 |
+
+一键安装（从主电脑复制库/模型）：
+
+```bash
+tools/setup_local_ocr.sh
+```
+
+手动安装：
+
+1) 复制库和模型：
+
+```bash
+mkdir -p /tmp/ocr
+scp quqiufeng@192.168.1.10:/opt/WordCard/voice/libs/libocr_simple.so /tmp/ocr/
+scp -r quqiufeng@192.168.1.10:'/opt/WordCard/models/ocr/*' /tmp/ocr/
+sudo mkdir -p /opt/WordCard/voice/libs /opt/WordCard/models/ocr
+sudo cp /tmp/ocr/libocr_simple.so /opt/WordCard/voice/libs/
+sudo cp /tmp/ocr/*.onnx /tmp/ocr/ppocr_keys_v1.txt /opt/WordCard/models/ocr/
+```
+
+2) ONNX Runtime 1.26 CPU（OCR 库要求 1.26 的版本符号，不能直接用 1.28）：
+
+```bash
+curl -L -o /tmp/ort.tgz \
+  https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-linux-x64-1.26.0.tgz
+tar xzf /tmp/ort.tgz -C /tmp
+sudo cp -a /tmp/onnxruntime-linux-x64-1.26.0 /opt/onnxruntime-1.26.0
+```
+
+3) OpenCV 4 运行库（Ubuntu）：
+
+```bash
+sudo apt-get install -y libopencv-imgcodecs-dev
+```
+
+4) 验证：
+
+```bash
+tools/ocr.sh /tmp/x.png
+```
+
+`OCR_LOCAL=0` 强制远程；`OCR_LIB` / `OCR_MODELS` / `OCR_ORT` 可覆盖路径。1080p 截图约 5–13 秒（i5-2400 CPU）；首次会尝试 CUDA 并自动回退 CPU，stderr 的 CUDA 警告可忽略。
 
 ## 文件
 
