@@ -207,7 +207,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 语音/微信：`tools/say.sh`、`tools/voices.sh`、`tools/wechat_send.sh`、`tools/wechat_send_file.sh`。
 - 媒体/家居/手机/Kindle：`music.sh`、`tv.sh`、`camera.sh`、`photo.sh`、`phone.sh`、`ebook.sh`、`vacuum.sh`、`detect.sh`。
 - 网络拓扑：远程用 `ssh quqiufeng@192.168.1.10 '/opt/my-agent/operator/tools/netmap.sh scan'`（生成 `operator/devices.json`、`NETWORK.md`、`devices.env`）；本机用 `tools/netmap.sh scan`。
-- 手机：本机 USB ADB 直控（`adb`）；汽水音乐 `tools/phone_music.sh play|stop`（scrcpy 音频 → USB 小音箱）；远程 `operator/tools/phone.sh` 仍可用。
+- 手机：本机 USB/Wi-Fi ADB 直控（`adb`）；IP 变了用 `tools/phone_ip.sh`（按 MAC `76:d0:b4:67:89:a9` 查 ARP + 扫 5555，校验型号 Z18）；汽水音乐 `tools/phone_music.sh play|stop`（scrcpy 音频 → USB 小音箱）；远程 `operator/tools/phone.sh` 仍可用。
 - 内容/数据/搜索：`image.sh`、`img_video.sh`、`video_dub.sh`、`lora.sh`、`stock.sh`、`dash.sh`、`google_search.sh`、`git_trending.sh`、`weibo_*.sh`、`douyin.sh`。
 - 集群/会话：`remote.sh`；启动大脑：`operator/start.sh`（通常已在跑，不要随意重启）。
 
@@ -264,7 +264,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
 - 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `tools/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。
-- **开发者模式**：语音以「开发者模式」开头（如「你好星期五，开发者模式 只回复OK」）→ 删掉“开发者模式”，余下文本由 `tools/tui_type.sh` 直接粘贴进大脑 TUI 并回车（绕过语音转发/工具规则）。
+- **开发者模式（简化）**：说「开发者 / 开发者模式」→ `tools/dev_tui.sh` 打开独立终端 `cd ~/my-agent && opencode`；50 秒窗口内（每次指令续期）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「退出开发者」关闭。
 
 ### 5.1.2 能力与权限（靠 AGENTS.md）
 

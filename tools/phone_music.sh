@@ -7,7 +7,13 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 PIDFILE=/tmp/myagent-phone-music.pid
 PKG=com.luna.music
 
-serial() { adb devices | awk 'NR>1 && $2=="device" {print $1; exit}'; }
+serial() {
+    for s in $(adb devices | awk 'NR>1 && $2=="device" {print $1}'); do
+        m=$(adb -s "$s" shell getprop ro.product.model 2>/dev/null | tr -d '\r')
+        case "$m" in *Z18*|*NX606J*) echo "$s"; return ;; esac
+    done
+    "$(dirname "$0")/phone_ip.sh" 2>/dev/null
+}
 
 case "${1:-}" in
     play)
@@ -19,20 +25,14 @@ case "${1:-}" in
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             echo "已在播放（音频转发 pid=$(cat "$PIDFILE")）"; exit 0
         fi
-        # 视频窗口钉在 GUI 右侧预览区（真同步），音频仍走 USB 小音箱
+        # 视频窗口钉在 GUI 右侧预览区（真同步），位置由 LuaJIT FFI/libxdo 设置
         export DISPLAY="${DISPLAY:-:0}" XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
-        gx=960; gy=0; gw=450; gh=900
-        gwid=$(xdotool search --name 'My Agent' 2>/dev/null | tail -1 || true)
-        if [ -n "$gwid" ]; then
-            ax=$(xwininfo -id "$gwid" 2>/dev/null | awk -F: '/Absolute upper-left X/{gsub(/ /,"",$2);print $2}')
-            ay=$(xwininfo -id "$gwid" 2>/dev/null | awk -F: '/Absolute upper-left Y/{gsub(/ /,"",$2);print $2}')
-            [ -n "$ax" ] && [ -n "$ay" ] && { gx=$((ax + 480)); gy=$ay; }
-        fi
         setsid nohup scrcpy -s "$s" --audio-source=output --no-control \
-            --window-borderless --always-on-top \
-            --window-x "$gx" --window-y "$gy" --window-width "$gw" --window-height "$gh" \
+            --window-borderless --always-on-top --window-width 450 --window-height 900 \
             >/tmp/myagent-phone-music.log 2>&1 &
         echo $! > "$PIDFILE"
+        sleep 2
+        luajit "$(dirname "$0")/winctl.lua" mirror-sync 2>/dev/null || true
         sleep 2
         echo "汽水音乐播放中（音频 → USB 小音箱）"
         ;;

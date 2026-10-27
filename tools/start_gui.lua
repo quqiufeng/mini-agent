@@ -56,4 +56,6 @@ end
 
 if has_client() then
     sh("tmux set-option -t " .. SESSION .. " destroy-unattached on 2>/dev/null")
+    sh("tmux set-option -t " .. SESSION .. " set-titles on 2>/dev/null")
+    sh("tmux set-option -t " .. SESSION .. " set-titles-string 'BRAIN TUI' 2>/dev/null")
 end

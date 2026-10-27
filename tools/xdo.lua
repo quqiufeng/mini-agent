@@ -28,6 +28,7 @@ int XGetGeometry(Display *display, unsigned long drawable, Window *root,
 int XTranslateCoordinates(Display *display, Window src, Window dst,
     int src_x, int src_y, int *dest_x, int *dest_y, Window *child);
 int XMapWindow(Display *display, Window w);
+int XMoveWindow(Display *display, Window w, int x, int y);
 int XUnmapWindow(Display *display, Window w);
 int XGetClassHint(Display *display, Window w, XClassHint *class_hints);
 int XSync(Display *display, Bool discard);
@@ -45,6 +46,7 @@ int xdo_activate_window(const xdo_t *xdo, Window wid);
 int xdo_focus_window(const xdo_t *xdo, Window wid);
 int xdo_raise_window(const xdo_t *xdo, Window wid);
 int xdo_minimize_window(const xdo_t *xdo, Window wid);
+int xdo_move_window(const xdo_t *xdo, Window wid, int x, int y);
 int xdo_move_mouse(const xdo_t *xdo, int x, int y, int screen);
 int xdo_move_mouse_relative_to_window(const xdo_t *xdo, Window window, int x, int y);
 int xdo_click_window(const xdo_t *xdo, Window window, int button);
@@ -179,6 +181,11 @@ function Xdo:activate(win) return lib.xdo_activate_window(self.handle, win) == 0
 function Xdo:focus(win) return lib.xdo_focus_window(self.handle, win) == 0 end
 function Xdo:raise(win) return lib.xdo_raise_window(self.handle, win) == 0 end
 function Xdo:minimize(win) return lib.xdo_minimize_window(self.handle, win) == 0 end
+function Xdo:move_window(win, x, y)
+    X11.XMoveWindow(self.dpy, win, x, y)
+    X11.XFlush(self.dpy)
+    return true
+end
 function Xdo:hide(win)
     local ok = X11.XUnmapWindow(self.dpy, win) ~= 0
     X11.XSync(self.dpy, 0)

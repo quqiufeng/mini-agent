@@ -28,7 +28,7 @@ check_py() {
 }
 
 echo "== 命令 =="
-for c in tmux opencode curl python3 adb scrcpy google-chrome xdotool scrot; do
+for c in tmux opencode curl python3 adb scrcpy google-chrome xclip scrot; do
   check_cmd "$c"
 done
 

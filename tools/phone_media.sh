@@ -2,7 +2,13 @@
 # @desc 手机媒体控制：上一首/下一首/播放暂停（ADB 媒体键）
 # @usage tools/phone_media.sh prev | next | playpause | play | pause
 set -uo pipefail
-serial() { adb devices | awk 'NR>1 && $2=="device" {print $1; exit}'; }
+serial() {
+    for s in $(adb devices | awk 'NR>1 && $2=="device" {print $1}'); do
+        m=$(adb -s "$s" shell getprop ro.product.model 2>/dev/null | tr -d '\r')
+        case "$m" in *Z18*|*NX606J*) echo "$s"; return ;; esac
+    done
+    "$(dirname "$0")/phone_ip.sh" 2>/dev/null
+}
 s=$(serial); [ -n "$s" ] || { echo "[phone_media] 手机未连接" >&2; exit 1; }
 case "${1:-}" in
     prev)      k=88 ;;

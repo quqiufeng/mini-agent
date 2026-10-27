@@ -16,15 +16,10 @@ if [ -f /tmp/myagent-phone-music.pid ] && kill -0 "$(cat /tmp/myagent-phone-musi
     fi
 fi
 
-# 2) 本机 VLC（NAS 音乐/视频）
-wid=$(xdotool search --class vlc 2>/dev/null | tail -1 || true)
-if [ -z "$wid" ]; then wid=$(xdotool search --class VLC 2>/dev/null | tail -1 || true); fi
-if [ -n "$wid" ]; then
-    geo=$(xdotool getwindowgeometry --shell "$wid" 2>/dev/null || true)
-    . <(printf '%s\n' "$geo")
-    if [ -n "${WIDTH:-}" ] && [ "${WIDTH:-0}" -gt 100 ]; then
-        scrot -o -a "${X},${Y},${WIDTH},${HEIGHT}" "$OUT" 2>/dev/null && echo "vlc"; exit 0
-    fi
+# 2) 本机 VLC（NAS 音乐/视频）——窗口几何走 LuaJIT FFI/libxdo
+read -r vx vy vw vh < <(luajit "$(dirname "$0")/winctl.lua" geom vlc 2>/dev/null || true)
+if [ -n "${vw:-}" ] && [ "${vw:-0}" -gt 100 ]; then
+    scrot -o -a "${vx},${vy},${vw},${vh}" "$OUT" 2>/dev/null && echo "vlc"; exit 0
 fi
 
 # 3) 电视（醒着且 adb 可达）

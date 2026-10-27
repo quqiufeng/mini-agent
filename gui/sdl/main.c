@@ -12,6 +12,8 @@
 #include <time.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 
 #define LW 480
 #define PW 450
@@ -21,7 +23,7 @@
 #define FONT "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 #define ASR_BIN ROOT "/tools/asr.sh"
 #define SEND_BIN ROOT "/send.sh"
-#define TUI_BIN ROOT "/tools/tui_type.sh"
+#define TUI_BIN ROOT "/tools/dev_tui.sh"
 #define TTS_BIN ROOT "/tools/tts.sh"
 #define ACK_WAV "/tmp/myagent_ack.wav"
 #define ACK_TXT "/tmp/myagent_ack.txt"
@@ -36,6 +38,7 @@ static int pending_n = 0;
 static int paused = 0;
 static double active_until = 0;
 static double suppress_until = 0;
+static double dev_until = 0;
 static int ack_busy = 0;
 static int ack_should_play = 0;
 static char *run_capture(char *const argv[], int *rc_out);
@@ -74,12 +77,7 @@ static void preview_quick(void) {
 
 static void sync_scrcpy(int wx, int wy) {
     (void)wx; (void)wy;
-    int r = system(
-        "g=$(xdotool search --name 'My Agent' 2>/dev/null | tail -1); "
-        "ax=$(xwininfo -id $g 2>/dev/null | awk '/Absolute upper-left X/{print $4}'); "
-        "ay=$(xwininfo -id $g 2>/dev/null | awk '/Absolute upper-left Y/{print $4}'); "
-        "s=$(xdotool search --class scrcpy 2>/dev/null | tail -1); "
-        "[ -n \"$ax\" ] && [ -n \"$s\" ] && xdotool windowmove $s $((ax+480)) $ay 2>/dev/null");
+    int r = system("luajit " ROOT "/tools/winctl.lua mirror-sync");
     (void)r;
 }
 
@@ -121,7 +119,7 @@ static void *ack_synth(void *arg) {
     const char *txt = (const char *)arg;
     setenv("TTS_NOPLAY", "1", 1);
     setenv("TTS_LOCAL_OUT", ACK_WAV, 1);
-    char *argv[] = { TTS_BIN, (char *)txt, NULL };
+    char *argv[] = { "/usr/bin/timeout", "60", TTS_BIN, (char *)txt, NULL };
     int rc = 0;
     char *out = run_capture(argv, &rc);
     free(out);
@@ -238,16 +236,27 @@ static char *run_capture(char *const argv[], int *rc_out) {
     if (pipe(p) != 0) return NULL;
     pid_t pid = fork();
     if (pid == 0) {
+        setpgid(0, 0);
         dup2(p[1], 1); dup2(p[1], 2); close(p[0]); close(p[1]);
         execv(argv[0], argv); _exit(127);
     }
+    setpgid(pid, pid);
     close(p[1]);
-    size_t cap = 4096, n = 0; char *buf = malloc(cap); ssize_t r;
-    while ((r = read(p[0], buf + n, cap - n - 1)) > 0) {
-        n += r;
+    size_t cap = 4096, n = 0; char *buf = malloc(cap);
+    struct pollfd pfd = { p[0], POLLIN, 0 };
+    time_t deadline = time(NULL) + 35;
+    while (1) {
+        int remain = (int)(deadline - time(NULL)) * 1000;
+        if (remain <= 0) break;
+        int pr = poll(&pfd, 1, remain);
+        if (pr <= 0) break;
+        ssize_t r = read(p[0], buf + n, cap - n - 1);
+        if (r <= 0) break;
+        n += (size_t)r;
         if (n + 1 >= cap) { cap *= 2; buf = realloc(buf, cap); }
     }
     close(p[0]);
+    kill(-pid, SIGKILL);
     int st = 0; waitpid(pid, &st, 0); buf[n] = 0;
     if (rc_out) *rc_out = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
     return buf;
@@ -294,8 +303,9 @@ static void *worker(void *arg) {
         pthread_mutex_unlock(&qmu);
 
         set_status("识别中 …");
+        if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: asr-start %s\n", path);
         if (getenv("VOICE_DEBUG")) { char cp[256]; snprintf(cp, sizeof cp, "cp -f '%s' /tmp/myagent_last.wav", path); int _r = system(cp); (void)_r; }
-        char *argv[] = { ASR_BIN, path, NULL };
+        char *argv[] = { "/usr/bin/timeout", "30", ASR_BIN, path, NULL };
         int rc = 0; char *out = run_capture(argv, &rc);
         char text[1024] = "";
         if (out) {
@@ -305,6 +315,7 @@ static void *worker(void *arg) {
             free(out);
         }
         unlink(path);
+        if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: asr-done rc=%d text=%s\n", rc, text);
         char norm[1024]; normalize(text, norm, sizeof norm);
         if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] asr=%s\n", text);
         if (rc != 0 || !*norm) { set_status(active_until > now_s() ? "已唤醒 · 在听" : "待唤醒"); continue; }
@@ -312,18 +323,62 @@ static void *worker(void *arg) {
         char rest[1024];
         int woke = strip_wake(text, rest, sizeof rest);
 
-        // 开发者模式：文本以「开发者模式」开头 → 删掉该词，余下文本直接键入大脑 TUI
+        // 开发者模式（简化）：说「开发者/开发者模式」进入 50 秒窗口；窗口内的话原样进 TUI
         {
-            const char *DEV = "开发者模式";
-            size_t dl = strlen(DEV);
-            char devbuf[1024] = "";
-            if (strncmp(norm, DEV, dl) == 0) snprintf(devbuf, sizeof devbuf, "%s", norm + dl);
-            else if (woke && strncmp(rest, DEV, dl) == 0) snprintf(devbuf, sizeof devbuf, "%s", rest + dl);
-            if (devbuf[0]) {
-                char line[1100]; snprintf(line, sizeof line, "开发者: %s", devbuf);
+            static double dev_ms = 0;
+            if (dev_ms <= 0) { const char *v = getenv("VOICE_DEV_ACTIVE_MS"); dev_ms = v ? atof(v) : 50000; }
+            static const char *DEVL[] = {"开发者模式", "开发模式", "开发者"};
+            static const char *LEAD[] = {"请", "帮我", "我要", "我想", "现在", "马上", "开始",
+                                         "进入", "打开", "开启", "启动", "切换", "切到", "调到", "唤醒"};
+            char cand[1024];
+            snprintf(cand, sizeof cand, "%s", woke ? rest : norm);
+            const char *p = cand;
+            for (;;) {
+                int ch = 0;
+                for (size_t i = 0; i < sizeof(LEAD)/sizeof(LEAD[0]); i++) {
+                    size_t l = strlen(LEAD[i]);
+                    if (strncmp(p, LEAD[i], l) == 0) { p += l; ch = 1; break; }
+                }
+                if (!ch) break;
+            }
+            if (strncmp(p, "退出开发者", strlen("退出开发者")) == 0 || strncmp(p, "退出开发", strlen("退出开发")) == 0) {
+                dev_until = 0;
+                add_line("● 退出开发者模式");
+                char *xargv[] = { "/usr/bin/timeout", "12", TUI_BIN, "stop", NULL };
+                int xrc = 0; char *xout = run_capture(xargv, &xrc); free(xout);
+                set_status("待唤醒");
+                continue;
+            }
+            const char *after = NULL;
+            for (size_t i = 0; i < sizeof(DEVL)/sizeof(DEVL[0]); i++) {
+                size_t l = strlen(DEVL[i]);
+                if (strncmp(p, DEVL[i], l) == 0) { after = p + l; break; }
+            }
+            if (after) {
+                dev_until = now_s() + dev_ms / 1000.0;
+                if (*after) {
+                    char line[1100]; snprintf(line, sizeof line, "开发者: %s", after);
+                    add_line(line);
+                    set_status("开发者模式 → TUI");
+                    if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: tui-start %s\n", after);
+                    char *targv[] = { "/usr/bin/timeout", "20", TUI_BIN, "type", (char *)after, NULL };
+                    int trc = 0; char *tout = run_capture(targv, &trc); free(tout);
+                    if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: tui-done rc=%d\n", trc);
+                    set_status(trc == 0 ? "已输入 TUI" : "TUI 输入失败");
+                    preview_refresh();
+                } else {
+                    char *sargv[] = { "/usr/bin/timeout", "20", TUI_BIN, "start", NULL };
+                    int src = 0; char *sout = run_capture(sargv, &src); free(sout);
+                    set_status(src == 0 ? "开发者模式 · 请说指令" : "dev TUI 启动失败");
+                }
+                continue;
+            }
+            if (now_s() < dev_until) {
+                dev_until = now_s() + dev_ms / 1000.0;
+                char line[1100]; snprintf(line, sizeof line, "开发者: %s", cand);
                 add_line(line);
                 set_status("开发者模式 → TUI");
-                char *targv[] = { TUI_BIN, devbuf, NULL };
+                char *targv[] = { "/usr/bin/timeout", "20", TUI_BIN, "type", cand, NULL };
                 int trc = 0; char *tout = run_capture(targv, &trc); free(tout);
                 set_status(trc == 0 ? "已输入 TUI" : "TUI 输入失败");
                 preview_refresh();
@@ -339,7 +394,7 @@ static void *worker(void *arg) {
             if (!rest[0]) { set_status("已唤醒 · 在听"); continue; }
             char line[1100]; snprintf(line, sizeof line, "我: %s", rest);
             add_line(line);
-            char *sargv[] = { SEND_BIN, rest, NULL };
+            char *sargv[] = { "/usr/bin/timeout", "30", SEND_BIN, rest, NULL };
             int src = -1;
             for (int i = 1; i <= 3; i++) {
                 char *sout = run_capture(sargv, &src); free(sout);
@@ -354,7 +409,7 @@ static void *worker(void *arg) {
             char line[1100]; snprintf(line, sizeof line, "我: %s", text);
             add_line(line);
             set_status("识别: 已发送");
-            char *sargv[] = { SEND_BIN, text, NULL };
+            char *sargv[] = { "/usr/bin/timeout", "30", SEND_BIN, text, NULL };
             int src = -1;
             for (int i = 1; i <= 3; i++) {
                 char *sout = run_capture(sargv, &src); free(sout);
@@ -442,19 +497,17 @@ int main(void) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
             else if (e.type == SDL_WINDOWEVENT) {
-                const char *sidcmd = "xdotool $(xdotool search --class scrcpy 2>/dev/null | tail -1)";
                 if (e.window.event == SDL_WINDOWEVENT_MOVED) {
-                    int r = system("xdotool windowunmap $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+                    int r = system("luajit " ROOT "/tools/winctl.lua mirror-hide"); (void)r;
                     drag_hidden = 1;
                     last_move_tick = SDL_GetTicks();
                 } else if (e.window.event == SDL_WINDOWEVENT_MINIMIZED || e.window.event == SDL_WINDOWEVENT_HIDDEN) {
-                    int r = system("xdotool windowminimize $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+                    int r = system("luajit " ROOT "/tools/winctl.lua mirror-hide"); (void)r;
                 } else if (e.window.event == SDL_WINDOWEVENT_RESTORED || e.window.event == SDL_WINDOWEVENT_SHOWN) {
                     int wx = 0, wy = 0; SDL_GetWindowPosition(win, &wx, &wy);
-                    int r = system("xdotool windowmap $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+                    int r = system("luajit " ROOT "/tools/winctl.lua mirror-show"); (void)r;
                     sync_scrcpy(wx, wy);
                 }
-                (void)sidcmd;
             }
             else if (e.type == SDL_KEYDOWN) {
                 if (e.key.keysym.sym == SDLK_ESCAPE) running = 0;
@@ -462,7 +515,7 @@ int main(void) {
                 else if (e.key.keysym.sym == SDLK_RETURN && *input) {
                     char line[600]; snprintf(line, sizeof line, "我: %s", input); add_line(line);
                     set_status("发送中 …");
-                    char *sargv[] = { SEND_BIN, input, NULL };
+                    char *sargv[] = { "/usr/bin/timeout", "30", SEND_BIN, input, NULL };
                     int rc = -1; for (int i = 1; i <= 3; i++) { char *o = run_capture(sargv, &rc); free(o); if (!rc) break; sleep(3); }
                     set_status(rc == 0 ? "已发送" : "发送失败");
                     preview_refresh();
@@ -545,7 +598,7 @@ int main(void) {
         if (drag_hidden && SDL_GetTicks() - last_move_tick > 300) {
             drag_hidden = 0;
             sync_scrcpy(0, 0);
-            int r = system("xdotool windowmap $(xdotool search --class scrcpy 2>/dev/null | tail -1) 2>/dev/null"); (void)r;
+            int r = system("luajit " ROOT "/tools/winctl.lua mirror-show"); (void)r;
         }
         static Uint32 last_move = 0;
         static int last_wx = -99999, last_wy = -99999;
