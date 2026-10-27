@@ -17,7 +17,7 @@ if [ -f /tmp/myagent-phone-music.pid ] && kill -0 "$(cat /tmp/myagent-phone-musi
 fi
 
 # 2) 本机 VLC（NAS 音乐/视频）——窗口几何走 LuaJIT FFI/libxdo
-read -r vx vy vw vh < <(luajit "$(dirname "$0")/winctl.lua" geom vlc 2>/dev/null || true)
+read -r vx vy vw vh < <("$(dirname "$0")/lua.sh" "$(dirname "$0")/winctl.lua" geom vlc 2>/dev/null || true)
 if [ -n "${vw:-}" ] && [ "${vw:-0}" -gt 100 ]; then
     scrot -o -a "${vx},${vy},${vw},${vh}" "$OUT" 2>/dev/null && echo "vlc"; exit 0
 fi

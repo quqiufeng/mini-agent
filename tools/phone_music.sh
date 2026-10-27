@@ -32,7 +32,7 @@ case "${1:-}" in
             >/tmp/myagent-phone-music.log 2>&1 &
         echo $! > "$PIDFILE"
         sleep 2
-        luajit "$(dirname "$0")/winctl.lua" mirror-sync 2>/dev/null || true
+        "$(dirname "$0")/lua.sh" "$(dirname "$0")/winctl.lua" mirror-sync 2>/dev/null || true
         sleep 2
         echo "汽水音乐播放中（音频 → USB 小音箱）"
         ;;

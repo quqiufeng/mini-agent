@@ -11,6 +11,7 @@
 示例：
 
 ```bash
+tools/lua.sh -e 'print(jit.version)'   # 优先用内嵌 LuaJIT 的 GUI 二进制，无需系统 luajit
 tools/doctor.sh               # 检查依赖/大脑/远程/手机/Chrome
 tools/list.sh                 # 列出本地工具
 tools/now.sh                  # 本机时间

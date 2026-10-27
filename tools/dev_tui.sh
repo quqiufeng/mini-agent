@@ -11,7 +11,7 @@ has() { tmux has-session -t "$SESSION" 2>/dev/null; }
 
 # 查找可复用的 TUI 窗口：DEV TUI，或任意 "OC |" 窗口（排除 BRAIN TUI）
 find_tui_win() {
-    luajit -e '
+    "$ROOT/tools/lua.sh" -e '
       package.path="'"$ROOT"'/tools/?.lua;"..package.path
       local Xdo=require("xdo"); local d=assert(Xdo.new())
       local dev, oc, brain
@@ -29,7 +29,7 @@ paste_win() {
     local wid="$1" text="$2"
     printf '%s' "$text" | xclip -selection clipboard >/dev/null 2>&1
     sleep 0.2
-    luajit -e '
+    "$ROOT/tools/lua.sh" -e '
       package.path="'"$ROOT"'/tools/?.lua;"..package.path
       local Xdo=require("xdo"); local d=assert(Xdo.new())
       local w=tonumber(arg[1]); if not w then os.exit(1) end

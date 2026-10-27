@@ -5,4 +5,4 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
-exec luajit "$DIR/winctl.lua" focus "BRAIN TUI"
+exec "$DIR/lua.sh" "$DIR/winctl.lua" focus "BRAIN TUI"

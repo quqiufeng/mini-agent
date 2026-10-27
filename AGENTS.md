@@ -260,7 +260,7 @@ echo $! > /tmp/opencode/vlc.pid
 
 - `gui/sdl/`：C + SDL2/SDL2_ttf 小窗口；**常驻采集** USB 麦克风（默认 Comica），静音切句 → `tools/asr.sh`（远程 SenseVoice）→ 文本唤醒词门控 → `tools/send.sh` 转发本地大脑（与远程 GUI 一样走 `/tui/append-prompt` + `/tui/submit-prompt`）。
 - 唤醒词与远程一致：`VOICE_WAKE` 默认 `你好星期五,星期五`；唤醒后 10 秒内的话直接当指令（不需要再说唤醒词）；VAD 阈值可用 `VOICE_RMS` 调。
-- 构建：`make -C gui/sdl`；运行：`gui/launch.sh`；桌面项 `~/.local/share/applications/myagent-voice.desktop`（`Terminal=false`）。
+- 构建：`make -C gui/sdl`（静态链 LuaJIT + SDL，内嵌 `winctl.lua`/`xdo.lua`，`gui/lib/libxdo.so.3` 随包分发，运行时不依赖系统 `luajit`/`libxdo3`；`--lua` 可当通用 Lua 运行器）；运行：`gui/launch.sh`；桌面项 `~/.local/share/applications/ai助手.desktop` 与桌面快捷方式 `~/Desktop/ai助手.desktop`（`Terminal=false`）。
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
 - 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `tools/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。

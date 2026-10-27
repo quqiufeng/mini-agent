@@ -14,4 +14,4 @@
 #   AGENT_PORT=4098 ./start.sh
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
-exec luajit "$DIR/tools/start_gui.lua" "$@"
+exec "$DIR/tools/lua.sh" "$DIR/tools/start_gui.lua" "$@"

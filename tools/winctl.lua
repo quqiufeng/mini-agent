@@ -43,7 +43,7 @@ if cmd == "focus" then
     local w = find_win(arg[2] or "BRAIN TUI")
     if w then d:activate(w.id) end
 elseif cmd == "mirror-sync" then
-    local g = find_win("My Agent")
+    local g = find_win("ai助手")
     local m = mirror_win()
     if g and m then d:move_window(m.id, g.geom.x + 480, g.geom.y) end
 elseif cmd == "mirror-hide" then
@@ -53,7 +53,7 @@ elseif cmd == "mirror-show" then
     local m = mirror_win()
     if m then
         d:show(m.id)
-        local g = find_win("My Agent")
+        local g = find_win("ai助手")
         if g then d:move_window(m.id, g.geom.x + 480, g.geom.y) end
         d:raise(m.id)
     end

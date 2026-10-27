@@ -11,15 +11,23 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+#include "lua_embed.h"
 
 #define LW 480
 #define PW 450
 #define W (LW + PW)
 #define H 900
-#define ROOT "/home/quqiufeng/my-agent"
+#ifndef MYAGENT_ROOT
+#define MYAGENT_ROOT "/home/quqiufeng/my-agent"
+#endif
+#define ROOT MYAGENT_ROOT
 #define FONT "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 #define ASR_BIN ROOT "/tools/asr.sh"
 #define SEND_BIN ROOT "/send.sh"
@@ -45,6 +53,100 @@ static char *run_capture(char *const argv[], int *rc_out);
 
 static SDL_Texture *preview_tex = NULL;
 static time_t preview_mtime = 0;
+
+/* ---- embedded LuaJIT: window control and generic Lua runner ---- */
+static lua_State *g_lua = NULL;
+
+static void lua_register_embedded_xdo(lua_State *L) {
+    if (luaL_loadbuffer(L, (const char *)xdo_lua, xdo_lua_len, "@xdo.lua") != 0) {
+        const char *e = lua_tostring(L, -1);
+        fprintf(stderr, "[lua] embed xdo: %s\n", e ? e : "error");
+        lua_pop(L, 1);
+        return;
+    }
+    lua_getglobal(L, "package");
+    lua_getfield(L, -1, "preload");
+    lua_pushvalue(L, -3);
+    lua_setfield(L, -2, "xdo");
+    lua_pop(L, 3);
+}
+
+static lua_State *lua_init(int embedded_xdo) {
+    lua_State *L = luaL_newstate();
+    if (!L) return NULL;
+    luaL_openlibs(L);
+    if (embedded_xdo) lua_register_embedded_xdo(L);
+    return L;
+}
+
+static int run_embedded_winctl(const char *cmd, const char *arg2) {
+    if (!g_lua && !(g_lua = lua_init(1))) {
+        fprintf(stderr, "[lua] cannot create state\n");
+        return -1;
+    }
+    lua_State *L = g_lua;
+    lua_createtable(L, 3, 0);
+    lua_pushstring(L, "winctl.lua"); lua_rawseti(L, -2, 0);
+    lua_pushstring(L, cmd ? cmd : ""); lua_rawseti(L, -2, 1);
+    if (arg2) { lua_pushstring(L, arg2); lua_rawseti(L, -2, 2); }
+    lua_setglobal(L, "arg");
+    if (luaL_loadbuffer(L, (const char *)winctl_lua, winctl_lua_len, "@winctl.lua") != 0
+        || lua_pcall(L, 0, 0, 0) != 0) {
+        const char *e = lua_tostring(L, -1);
+        fprintf(stderr, "[lua] winctl %s: %s\n", cmd ? cmd : "", e ? e : "error");
+        lua_pop(L, 1);
+        return -1;
+    }
+    return 0;
+}
+
+static int run_lua_cli(int argc, char **argv) {
+    if (argc < 1) {
+        fprintf(stderr, "usage: %s --lua <script.lua | -e code> [args...]\n", "myagent-voice");
+        return 2;
+    }
+    int is_expr = strcmp(argv[0], "-e") == 0;
+    const char *src = is_expr ? (argc > 1 ? argv[1] : NULL) : argv[0];
+    if (!src) {
+        fprintf(stderr, "usage: %s --lua -e <code> [args...]\n", "myagent-voice");
+        return 2;
+    }
+    int first = is_expr ? 2 : 1;
+    lua_State *L = lua_init(0);
+    if (!L) return 1;
+
+    if (!is_expr) {
+        char dir[4096];
+        snprintf(dir, sizeof dir, "%s", argv[0]);
+        char *slash = strrchr(dir, '/');
+        if (slash) *slash = 0; else snprintf(dir, sizeof dir, ".");
+        lua_getglobal(L, "package");
+        lua_pushfstring(L, "%s/?.lua;", dir);
+        lua_getfield(L, -2, "path");
+        lua_concat(L, 2);
+        lua_setfield(L, -2, "path");
+        lua_pop(L, 1);
+    }
+
+    lua_createtable(L, argc - first + 1, 0);
+    lua_pushstring(L, src); lua_rawseti(L, -2, 0);
+    for (int i = first; i < argc; i++) {
+        lua_pushstring(L, argv[i]);
+        lua_rawseti(L, -2, i - first + 1);
+    }
+    lua_setglobal(L, "arg");
+
+    int rc = is_expr ? luaL_loadbuffer(L, src, strlen(src), "=(command line)")
+                     : luaL_loadfile(L, src);
+    if (rc != 0 || lua_pcall(L, 0, 0, 0) != 0) {
+        const char *e = lua_tostring(L, -1);
+        fprintf(stderr, "[lua] %s\n", e ? e : "error");
+        lua_close(L);
+        return 1;
+    }
+    lua_close(L);
+    return 0;
+}
 
 static void *preview_after_cmd(void *arg) {
     (void)arg;
@@ -77,8 +179,7 @@ static void preview_quick(void) {
 
 static void sync_scrcpy(int wx, int wy) {
     (void)wx; (void)wy;
-    int r = system("luajit " ROOT "/tools/winctl.lua mirror-sync");
-    (void)r;
+    run_embedded_winctl("mirror-sync", NULL);
 }
 
 static void preview_refresh(void) {
@@ -457,14 +558,25 @@ static void text(SDL_Renderer *r, TTF_Font *f, const char *s, int x, int y, SDL_
     SDL_DestroyTexture(tex); SDL_FreeSurface(surf);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc >= 2 && strcmp(argv[1], "--winctl") == 0)
+        return run_embedded_winctl(argc >= 3 ? argv[2] : "", argc >= 4 ? argv[3] : NULL) == 0 ? 0 : 1;
+    if (argc >= 2 && strcmp(argv[1], "--lua") == 0)
+        return run_lua_cli(argc - 2, argv + 2);
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
     if (TTF_Init() != 0) { fprintf(stderr, "TTF_Init: %s\n", TTF_GetError()); return 1; }
     IMG_Init(IMG_INIT_PNG);
     unlink("/tmp/myagent_mirror.id");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
     if (chdir(ROOT) != 0) {}
-    SDL_Window *win = SDL_CreateWindow("My Agent · 语音", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_SHOWN);
+    SDL_Window *win = SDL_CreateWindow("ai助手", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_SHOWN);
+    {
+        SDL_RWops *rw = SDL_RWFromConstMem(icon_png, icon_png_len);
+        if (rw) {
+            SDL_Surface *ic = IMG_Load_RW(rw, 1);
+            if (ic) { SDL_SetWindowIcon(win, ic); SDL_FreeSurface(ic); }
+        }
+    }
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
     TTF_Font *font = TTF_OpenFontIndex(FONT, 20, 0);
@@ -499,14 +611,14 @@ int main(void) {
             if (e.type == SDL_QUIT) running = 0;
             else if (e.type == SDL_WINDOWEVENT) {
                 if (e.window.event == SDL_WINDOWEVENT_MOVED) {
-                    int r = system("luajit " ROOT "/tools/winctl.lua mirror-hide"); (void)r;
+                    run_embedded_winctl("mirror-hide", NULL);
                     drag_hidden = 1;
                     last_move_tick = SDL_GetTicks();
                 } else if (e.window.event == SDL_WINDOWEVENT_MINIMIZED || e.window.event == SDL_WINDOWEVENT_HIDDEN) {
-                    int r = system("luajit " ROOT "/tools/winctl.lua mirror-hide"); (void)r;
+                    run_embedded_winctl("mirror-hide", NULL);
                 } else if (e.window.event == SDL_WINDOWEVENT_RESTORED || e.window.event == SDL_WINDOWEVENT_SHOWN) {
                     int wx = 0, wy = 0; SDL_GetWindowPosition(win, &wx, &wy);
-                    int r = system("luajit " ROOT "/tools/winctl.lua mirror-show"); (void)r;
+                    run_embedded_winctl("mirror-show", NULL);
                     sync_scrcpy(wx, wy);
                 }
             }
@@ -599,7 +711,7 @@ int main(void) {
         if (drag_hidden && SDL_GetTicks() - last_move_tick > 300) {
             drag_hidden = 0;
             sync_scrcpy(0, 0);
-            int r = system("luajit " ROOT "/tools/winctl.lua mirror-show"); (void)r;
+            run_embedded_winctl("mirror-show", NULL);
         }
         static Uint32 last_move = 0;
         static int last_wx = -99999, last_wy = -99999;
@@ -620,7 +732,7 @@ int main(void) {
         }
         SDL_SetRenderDrawColor(ren, 24, 26, 30, 255); SDL_RenderClear(ren);
         SDL_Color white = { 230,232,238,255 }, gray = { 150,155,165,255 }, blue = { 120,170,255,255 }, green = { 120,220,150,255 };
-        text(ren, big, "My Agent", 40, 30, white);
+        text(ren, big, "ai助手", 40, 30, white);
         text(ren, small, "唤醒词：你好星期五 / 星期五（10 秒内直接说指令）", 40, 72, gray);
         char buf[600];
         snprintf(buf, sizeof buf, "麦克风: %s", mic_name);

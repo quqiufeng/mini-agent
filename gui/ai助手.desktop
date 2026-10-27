@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ai助手
+Comment=USB 麦克风 → 识别 → 本地大脑
+Exec=/home/quqiufeng/my-agent/gui/launch.sh
+Icon=/home/quqiufeng/.local/share/icons/smallpc/myagent-voice.png
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+StartupWMClass=myagent-voice

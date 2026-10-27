@@ -33,13 +33,25 @@ cd ~/my-agent
 - Chrome / Chromium、`adb`、`scrcpy`、`xdotool`、`scrot`
 - 到远程 `quqiufeng@192.168.1.10` 的免密 SSH
 - 远程 `/opt/my-agent` 的白名单工具（TTS/ASR、微信、媒体、手机等）
+- 构建语音 GUI：`libluajit-5.1-dev`、`libsdl2-dev`、`libsdl2-ttf-dev`、`libsdl2-image-dev`
+- 运行时 `libxdo.so.3` 已随仓库放在 `gui/lib/`，不要求目标系统安装 `libxdo3`
 
 Ubuntu 可参考：
 
 ```bash
 sudo apt-get install -y tmux python3 python3-requests python3-numpy \
-  python3-websocket scrcpy adb xdotool scrot
+  python3-websocket scrcpy adb xdotool scrot \
+  libluajit-5.1-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
 ```
+
+语音 GUI 把 LuaJIT 与 `tools/winctl.lua`、`tools/xdo.lua` 内嵌进二进制：
+
+```bash
+make -C gui/sdl          # 静态链 LuaJIT + SDL，运行时不依赖系统 luajit
+```
+
+构建后 `tools/lua.sh` 会优先用 `gui/sdl/myagent-voice --lua` 执行脚本，没有二进制时才退回系统 `luajit`。
+二进制通过 `RUNPATH=$ORIGIN/../lib` 优先加载 `gui/lib/libxdo.so.3`。
 
 ## 文件
 
