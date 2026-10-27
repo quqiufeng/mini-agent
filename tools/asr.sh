@@ -1,15 +1,69 @@
 #!/usr/bin/env bash
-# @desc 语音转文本：本地音频 scp 到远程，调用封装好的 listen.sh 识别
+# @desc 语音转文本：本机 SenseVoice.cpp 优先，失败再回退远程 voice/listen.sh
 # @usage tools/asr.sh <本地音频文件>
-# @rule 本机不做 ASR；远程用 ffmpeg 转 16k 单声道后交给 voice/listen.sh
+# @rule 本机有 /opt/SenseVoice.cpp/bin/sense-voice-main + 模型时完全本地；任意采样率/24bit 先用 python 转 16k 单声道
 set -euo pipefail
 
-HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
 [ $# -eq 1 ] || { echo "用法: $0 <本地音频文件>" >&2; exit 2; }
 SRC="$1"
 [ -f "$SRC" ] || { echo "[asr] 文件不存在: $SRC" >&2; exit 1; }
 LANG="${ASR_LANG:-zh}"
 [[ "$LANG" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "非法 ASR_LANG: $LANG" >&2; exit 2; }
+
+SV_BIN="${SENSEVOICE_BIN:-/opt/SenseVoice.cpp/bin/sense-voice-main}"
+SV_MODEL="${SENSEVOICE_MODEL:-/opt/SenseVoice.cpp/models/sense-voice-small-q4_k.gguf}"
+SV_LIB="${SENSEVOICE_LIB:-/opt/SenseVoice.cpp/lib}"
+SV_THREADS="${SENSEVOICE_THREADS:-4}"
+SV_DIR="${SENSEVOICE_DIR:-/opt/SenseVoice.cpp}"
+
+# ── 本地优先 ────────────────────────────────────────────────
+if [ "${ASR_LOCAL:-1}" != "0" ] && [ -x "$SV_BIN" ] && [ -r "$SV_MODEL" ]; then
+    TMP16="$(mktemp /tmp/myagent-asr16-XXXXXX.wav)"
+    if python3 - "$SRC" "$TMP16" >/dev/null 2>&1 <<'PY'
+import audioop, sys, wave
+src, dst = sys.argv[1], sys.argv[2]
+w = wave.open(src, 'rb')
+ch, width, rate = w.getnchannels(), w.getsampwidth(), w.getframerate()
+data = w.readframes(w.getnframes())
+w.close()
+if ch != 1:
+    data = audioop.tomono(data, width, 0.5, 0.5)
+    ch = 1
+if width != 2:
+    data = audioop.lin2lin(data, width, 2)
+    width = 2
+if rate != 16000:
+    data, _ = audioop.ratecv(data, width, ch, rate, 16000, None)
+o = wave.open(dst, 'wb')
+o.setnchannels(1); o.setsampwidth(2); o.setframerate(16000)
+o.writeframes(data)
+o.close()
+PY
+    then
+        set +e
+        RAW="$(cd "$SV_DIR" 2>/dev/null && LD_LIBRARY_PATH="$SV_LIB:${LD_LIBRARY_PATH:-}" timeout 30 \
+            "$SV_BIN" -m "$SV_MODEL" -t "$SV_THREADS" -l "$LANG" -ng "$TMP16" 2>/tmp/myagent-asr.log)"
+        RC=$?
+        set -e
+        TEXT="$(printf '%s\n' "$RAW" \
+            | sed -n 's/^\[[0-9.]*-[0-9.]*\][[:space:]]*//p' \
+            | sed 's/<|[^|]*|>//g' \
+            | tr '\n' ' ' \
+            | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]][[:space:]]*/ /g')"
+        rm -f "$TMP16"
+        if [ "$RC" -eq 0 ] && [ -n "$TEXT" ]; then
+            printf '%s\n' "$TEXT"
+            exit 0
+        fi
+        echo "[asr] 本地识别失败，回退远程" >&2
+        [ -s /tmp/myagent-asr.log ] && tail -3 /tmp/myagent-asr.log >&2 || true
+    else
+        rm -f "$TMP16"
+    fi
+fi
+
+# ── 远程回退 ────────────────────────────────────────────────
+HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
 LANG_Q="$(printf '%q' "$LANG")"
 
 BASE="myagent-asr-$(date +%s)-$$"

@@ -7,3 +7,4 @@ stop_*
 NETWORK.local.md
 devices.local.json
 devices.local.env
+fbank_lfr_cmvn_feature.json

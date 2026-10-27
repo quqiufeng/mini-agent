@@ -15,8 +15,8 @@ tools/lua.sh -e 'print(jit.version)'   # 优先用内嵌 LuaJIT 的 GUI 二进�
 tools/doctor.sh               # 检查依赖/大脑/远程/手机/Chrome
 tools/list.sh                 # 列出本地工具
 tools/now.sh                  # 本机时间
-tools/tts.sh "你好"            # 远程合成、scp 到本机、PipeWire 小音响播放
-tools/asr.sh /tmp/x.wav       # 调远程 voice/listen.sh 识别
+tools/tts.sh "你好"            # 本地 Kokoro 合成（失败回退远程）→ 小音响
+tools/asr.sh /tmp/x.wav       # 本地 SenseVoice.cpp 识别（失败回退远程）
 tools/spectrum.sh 32 30       # USB 麦克风频谱流（JSON Lines）
 tools/record_mic.sh 5 /tmp/x.wav  # 录 USB 麦克风到 WAV
 tools/chrome.sh open https://example.com
@@ -39,6 +39,8 @@ tools/appshot.sh               # 抓当前应用截图给 GUI 右侧预览
 tools/tencent.sh 寒战         # 电视腾讯视频按首字母搜索（默认只搜不播）
 tools/tencent.sh 寒战 --play  # 搜索并播放第一集
 tools/tencent.sh 伟大的长征 --expect 伟大的长征  # 逐字母 OCR 校验 + 详情页标题校验
+tools/kws_keywords.py "你好星期五"  # 生成 KWS 拼音关键词
+tools/setup_local_voice.sh    # 安装本地 KWS/Kokoro/SenseVoice
 tools/netmap.sh scan          # 扫描本机局域网，生成 NETWORK.local.md / devices.local.*
 tools/netmap.sh show          # 查看上次拓扑
 tools/netmap.sh sources       # 输出 NETMAP_*_IP 变量

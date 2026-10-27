@@ -19,6 +19,9 @@
 #include <lauxlib.h>
 #include <lualib.h>
 #include "lua_embed.h"
+#ifdef HAVE_KWS
+#include <sherpa-onnx/c-api/c-api.h>
+#endif
 
 #define LW 480
 #define PW 450
@@ -45,6 +48,14 @@ static char pending_wav[8][128];
 static int pending_n = 0;
 static int paused = 0;
 static double active_until = 0;
+static volatile double kws_ack_at = 0;
+static volatile int kws_woke_pending = 0;
+static char kws_woke_word[128] = "";
+static int g_kws_ready = 0;
+#ifdef HAVE_KWS
+static const SherpaOnnxKeywordSpotter *g_kws = NULL;
+static const SherpaOnnxOnlineStream *g_kws_stream = NULL;
+#endif
 static double suppress_until = 0;
 static double dev_until = 0;
 static int ack_busy = 0;
@@ -270,6 +281,87 @@ static void add_line(const char *s) {
     pthread_mutex_unlock(&mu);
 }
 
+
+#ifdef HAVE_KWS
+static int kws_init(void) {
+    const char *dir = getenv("KWS_MODEL_DIR");
+    if (!dir || !*dir)
+        dir = "/opt/sherpa-onnx/models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01";
+    char enc[4096], dec[4096], joi[4096], tok[4096], kw[4096];
+    const char *e = getenv("KWS_ENCODER");
+    const char *d = getenv("KWS_DECODER");
+    const char *j = getenv("KWS_JOINER");
+    const char *t = getenv("KWS_TOKENS");
+    const char *k = getenv("KWS_KEYWORDS");
+    if (!e || !*e) { snprintf(enc, sizeof enc, "%s/encoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx", dir); e = enc; }
+    if (!d || !*d) { snprintf(dec, sizeof dec, "%s/decoder-epoch-99-avg-1-chunk-16-left-64.int8.onnx", dir); d = dec; }
+    if (!j || !*j) { snprintf(joi, sizeof joi, "%s/joiner-epoch-99-avg-1-chunk-16-left-64.int8.onnx", dir); j = joi; }
+    if (!t || !*t) { snprintf(tok, sizeof tok, "%s/tokens.txt", dir); t = tok; }
+    if (!k || !*k) { snprintf(kw, sizeof kw, "%s/gui/kws/keywords.txt", ROOT); k = kw; }
+    if (access(e, R_OK) || access(d, R_OK) || access(j, R_OK) || access(t, R_OK) || access(k, R_OK)) {
+        fprintf(stderr, "[kws] missing model/keywords (dir=%s, keywords=%s)\n", dir, k);
+        return 0;
+    }
+    SherpaOnnxKeywordSpotterConfig cfg;
+    memset(&cfg, 0, sizeof cfg);
+    cfg.feat_config.sample_rate = 16000;
+    cfg.feat_config.feature_dim = 80;
+    cfg.model_config.transducer.encoder = e;
+    cfg.model_config.transducer.decoder = d;
+    cfg.model_config.transducer.joiner = j;
+    cfg.model_config.tokens = t;
+    cfg.model_config.num_threads = 1;
+    cfg.model_config.provider = "cpu";
+    cfg.model_config.model_type = "zipformer2";
+    cfg.max_active_paths = 4;
+    cfg.num_trailing_blanks = 1;
+    const char *score = getenv("KWS_SCORE");
+    const char *thr = getenv("KWS_THRESHOLD");
+    cfg.keywords_score = score ? (float)atof(score) : 1.0f;
+    cfg.keywords_threshold = thr ? (float)atof(thr) : 0.25f;
+    cfg.keywords_file = k;
+    g_kws = SherpaOnnxCreateKeywordSpotter(&cfg);
+    if (!g_kws) { fprintf(stderr, "[kws] create failed\n"); return 0; }
+    g_kws_stream = SherpaOnnxCreateKeywordStream(g_kws);
+    if (!g_kws_stream) { SherpaOnnxDestroyKeywordSpotter(g_kws); g_kws = NULL; return 0; }
+    fprintf(stderr, "[kws] ready: %s\n", k);
+    return 1;
+}
+
+static void kws_shutdown(void) {
+    if (g_kws_stream) { SherpaOnnxDestroyOnlineStream(g_kws_stream); g_kws_stream = NULL; }
+    if (g_kws) { SherpaOnnxDestroyKeywordSpotter(g_kws); g_kws = NULL; }
+}
+
+static void kws_feed(const Sint16 *samples, size_t n) {
+    if (!g_kws_ready || !g_kws_stream || n == 0) return;
+    static float buf[1024];
+    if (n > sizeof(buf) / sizeof(buf[0])) n = sizeof(buf) / sizeof(buf[0]);
+    for (size_t i = 0; i < n; i++) buf[i] = (float)samples[i] / 32768.0f;
+    SherpaOnnxOnlineStreamAcceptWaveform(g_kws_stream, 16000, buf, (int32_t)n);
+    while (SherpaOnnxIsKeywordStreamReady(g_kws, g_kws_stream))
+        SherpaOnnxDecodeKeywordStream(g_kws, g_kws_stream);
+    const SherpaOnnxKeywordResult *r = SherpaOnnxGetKeywordResult(g_kws, g_kws_stream);
+    if (r && r->keyword && r->keyword[0]) {
+        SherpaOnnxResetKeywordStream(g_kws, g_kws_stream);
+        double active_ms = 10000;
+        const char *v = getenv("VOICE_ACTIVE_MS");
+        if (v) active_ms = atof(v);
+        active_until = now_s() + active_ms / 1000.0;
+        kws_ack_at = now_s();
+        snprintf(kws_woke_word, sizeof kws_woke_word, "%s", r->keyword);
+        kws_woke_pending = 1;
+        if (getenv("VOICE_DEBUG") || getenv("KWS_DEBUG"))
+            fprintf(stderr, "[kws] detected: %s\n", r->keyword);
+    }
+    if (r) SherpaOnnxDestroyKeywordResult(r);
+}
+#else
+static int kws_init(void) { return 0; }
+static void kws_shutdown(void) {}
+static void kws_feed(const Sint16 *samples, size_t n) { (void)samples; (void)n; }
+#endif
+
 static void *cap_thread(void *arg) {
     (void)arg;
     Sint16 buf[320];
@@ -294,6 +386,7 @@ static void *cap_thread(void *arg) {
             pcm_n += (size_t)r;
         }
         pthread_mutex_unlock(&mu);
+        if (!paused) kws_feed(buf, (size_t)r);
         static int reads = 0;
         if (getenv("VOICE_DEBUG") && ++reads % 100 == 0)
             fprintf(stderr, "[gui] reads=%d pcm_n=%zu\n", reads, pcm_n);
@@ -423,6 +516,7 @@ static void *worker(void *arg) {
 
         char rest[1024];
         int woke = strip_wake(text, rest, sizeof rest);
+        int kws_recent = (kws_ack_at > 0 && now_s() - kws_ack_at < 8.0);
 
         // 开发者模式（简化）：说「开发者/开发者模式」进入 50 秒窗口；窗口内的话原样进 TUI
         {
@@ -490,8 +584,7 @@ static void *worker(void *arg) {
         if (active_ms <= 0) { const char *v = getenv("VOICE_ACTIVE_MS"); active_ms = v ? atof(v) : 10000; }
         if (woke) {
             active_until = now_s() + active_ms / 1000.0;
-            add_line("● 唤醒");
-            ack_speak(1);
+            if (!kws_recent) { add_line("● 唤醒"); ack_speak(1); }
             if (!rest[0]) { set_status("已唤醒 · 在听"); continue; }
             char line[1100]; snprintf(line, sizeof line, "我: %s", rest);
             add_line(line);
@@ -506,7 +599,7 @@ static void *worker(void *arg) {
             continue;
         }
 
-        if (active_until > now_s()) {
+        if (g_kws_ready || active_until > now_s()) {
             char line[1100]; snprintf(line, sizeof line, "我: %s", text);
             add_line(line);
             set_status("识别: 已发送");
@@ -584,6 +677,9 @@ int main(int argc, char **argv) {
     TTF_Font *big = TTF_OpenFontIndex(FONT, 30, 0);
     if (!font || !small || !big) return 1;
 
+    g_kws_ready = kws_init();
+    if (getenv("VOICE_DEBUG") || getenv("KWS_DEBUG"))
+        fprintf(stderr, "[kws] state=%s\n", g_kws_ready ? "on" : "off");
     open_capture();
     // 大脑没起就先拉起来（start.sh 会开显式终端）
     if (system("curl --max-time 1 -sf http://127.0.0.1:4097/global/health >/dev/null 2>&1") != 0) {
@@ -594,6 +690,7 @@ int main(int argc, char **argv) {
     ack_speak(0);
 
     int running = 1, recording = 0, quiet = 0, proc_pos = 0;
+    int dragging = 0, drag_dx = 0, drag_dy = 0;
     int drag_hidden = 0; Uint32 last_move_tick = 0;
     double speech_rms = 0; char input[512] = "";
     SDL_Event e;
@@ -639,7 +736,13 @@ int main(int argc, char **argv) {
                 if (l + a < sizeof(input) - 1) strcat(input, e.text.text);
             } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
                 int x = e.button.x, y = e.button.y;
-                if (x >= micbtn.x && x <= micbtn.x + micbtn.w && y >= micbtn.y && y <= micbtn.y + micbtn.h) cycle_mic();
+                if (y < 92 && x < LW) {
+                    int gx = 0, gy = 0, wx = 0, wy = 0;
+                    SDL_GetGlobalMouseState(&gx, &gy);
+                    SDL_GetWindowPosition(win, &wx, &wy);
+                    drag_dx = gx - wx; drag_dy = gy - wy;
+                    dragging = 1;
+                } else if (x >= micbtn.x && x <= micbtn.x + micbtn.w && y >= micbtn.y && y <= micbtn.y + micbtn.h) cycle_mic();
                 else if (x >= pausebtn.x && x <= pausebtn.x + pausebtn.w && y >= pausebtn.y && y <= pausebtn.y + pausebtn.h) {
                     paused = !paused; set_status(paused ? "已暂停" : "待唤醒");
                 } else if (x >= bvoldown.x && x <= bvoldown.x + bvoldown.w && y >= bvoldown.y && y <= bvoldown.y + bvoldown.h) {
@@ -658,8 +761,27 @@ int main(int argc, char **argv) {
                     if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "next", (char *)NULL); _exit(1); }
                     set_status("下一首"); preview_quick();
                 }
+            } else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT) {
+                dragging = 0;
+            } else if (e.type == SDL_MOUSEMOTION && dragging && (e.motion.state & SDL_BUTTON_LMASK)) {
+                int gx = 0, gy = 0;
+                SDL_GetGlobalMouseState(&gx, &gy);
+                SDL_SetWindowPosition(win, gx - drag_dx, gy - drag_dy);
             }
         }
+
+        if (kws_woke_pending) {
+            kws_woke_pending = 0;
+            recording = 0; quiet = 0; seg_start = proc_pos;
+            char line[220];
+            snprintf(line, sizeof line, "● 唤醒（本地）：%s", kws_woke_word);
+            add_line(line);
+            set_status("已唤醒 · 在听");
+            ack_speak(1);
+        }
+        static int ui_awake = 0;
+        if (active_until > now_s()) ui_awake = 1;
+        else if (ui_awake) { ui_awake = 0; set_status("待唤醒"); }
 
         if (cap_started) {
             pthread_mutex_lock(&mu);
@@ -686,13 +808,16 @@ int main(int argc, char **argv) {
                         if (quiet >= 19200) {
                             size_t a = seg_start, b = proc_pos + i + CH;
                             if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] flush len=%zu\n", b - a);
-                            if (b > a && b - a > 12800) enqueue_segment(pcm + a, b - a);
+                            if (b > a && b - a > 12800 &&
+                                (!g_kws_ready || active_until > now_s()))
+                                enqueue_segment(pcm + a, b - a);
                             recording = 0; quiet = 0; seg_start = b;
                         }
                     }
                 }
                 if (recording && total - seg_start >= (size_t)(8 * 16000)) {
-                    enqueue_segment(pcm + seg_start, total - seg_start);
+                    if (!g_kws_ready || active_until > now_s())
+                        enqueue_segment(pcm + seg_start, total - seg_start);
                     seg_start = total;
                 }
                 proc_pos += (cnt / CH) * CH;
@@ -733,7 +858,9 @@ int main(int argc, char **argv) {
         SDL_SetRenderDrawColor(ren, 24, 26, 30, 255); SDL_RenderClear(ren);
         SDL_Color white = { 230,232,238,255 }, gray = { 150,155,165,255 }, blue = { 120,170,255,255 }, green = { 120,220,150,255 };
         text(ren, big, "ai助手", 40, 30, white);
-        text(ren, small, "唤醒词：你好星期五 / 星期五（10 秒内直接说指令）", 40, 72, gray);
+        text(ren, small, g_kws_ready
+             ? "唤醒词（本地）：你好星期五 / 星期五（10 秒内直接说指令）"
+             : "唤醒词：你好星期五 / 星期五（本地 KWS 未启用）", 40, 72, gray);
         char buf[600];
         snprintf(buf, sizeof buf, "麦克风: %s", mic_name);
         text(ren, small, buf, 40, 100, gray);
@@ -815,6 +942,8 @@ int main(int argc, char **argv) {
         SDL_Delay(16);
     }
     if (cap_pcm) { cap_stop = 1; snd_pcm_close(cap_pcm); cap_pcm = NULL; }
+    usleep(200000);
+    kws_shutdown();
     TTF_CloseFont(font); TTF_CloseFont(small); TTF_CloseFont(big);
     SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); TTF_Quit(); SDL_Quit();
     pthread_mutex_lock(&mu); free(pcm); pthread_mutex_unlock(&mu);

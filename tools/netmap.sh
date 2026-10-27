@@ -16,6 +16,9 @@ import ipaddress, json, os, re, socket, subprocess, sys, time
 OUT_DIR = os.environ["NETMAP_OUT_DIR"]
 PORTS = [22, 80, 443, 554, 5005, 5555, 8000, 8080, 9000, 9222]
 
+PHONE_MAC = os.environ.get("PHONE_MAC", "76:d0:b4:67:89:a9").lower()
+PHONE_LABEL = os.environ.get("PHONE_LABEL", "手机 Z18")
+
 VENDORS = {
     "a0:36:79": "中国电信", "00:d8:61": "Micro-Star(MSI)", "24:97:ed": "极空间",
     "b8:27:eb": "Raspberry Pi", "dc:a6:32": "Raspberry Pi", "e4:5f:01": "Raspberry Pi",
@@ -132,7 +135,8 @@ def main():
     for d in devices:
         d["role"] = known.get(d["ip"], "")
         if not d["role"]:
-            if 5005 in d["ports"]: d["role"] = "NAS/WebDAV"
+            if d["mac"].lower() == PHONE_MAC: d["role"] = PHONE_LABEL
+            elif 5005 in d["ports"]: d["role"] = "NAS/WebDAV"
             elif 554 in d["ports"]: d["role"] = "摄像头/RTSP"
             elif 5555 in d["ports"]: d["role"] = "Android/TV(adb)"
             elif 9222 in d["ports"]: d["role"] = "Chrome 调试"
@@ -163,8 +167,9 @@ def main():
              "192.168.1.53": "NAS", "192.168.1.68": "MINIPC",
              "192.168.1.110": "TV", "192.168.1.111": "CAMERA",
              "192.168.1.52": "AP"}
+    alias_role = {PHONE_LABEL: "PHONE"}
     for d in devices:
-        key = alias.get(d["ip"])
+        key = alias.get(d["ip"]) or alias_role.get(d["role"])
         if not key:
             key = re.sub(r"[^A-Z0-9]+", "_", (d["hostname"] or d["role"] or "").upper()).strip("_")
         if not key:

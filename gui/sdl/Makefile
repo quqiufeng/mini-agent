@@ -18,17 +18,30 @@ SDL_STATIC_DEPS := $(shell pkg-config --static --libs sdl2 SDL2_ttf SDL2_image \
 RPATH := -Wl,-rpath,'$$ORIGIN/../lib'
 LIBXDO ?= ../lib/libxdo.so.3
 
-CFLAGS := -O2 -Wall -I$(LUAJIT_INC) $(SDL_CFLAGS) -pthread -DMYAGENT_ROOT=\"$(ROOT)\"
+KWS ?= 1
+SHERPA_DIR ?= /opt/sherpa-onnx
+ifeq ($(KWS),1)
+ifeq ($(wildcard $(SHERPA_DIR)/lib/libsherpa-onnx-c-api.so),)
+$(error sherpa-onnx not found in $(SHERPA_DIR); run tools/setup_local_voice.sh or set SHERPA_DIR=/path)
+endif
+KWS_CFLAGS := -I$(SHERPA_DIR)/include -DHAVE_KWS=1
+KWS_LIBS := -L$(SHERPA_DIR)/lib -lsherpa-onnx-c-api -lonnxruntime -Wl,-rpath,$(SHERPA_DIR)/lib
+else
+KWS_CFLAGS :=
+KWS_LIBS :=
+endif
+
+CFLAGS := -O2 -Wall -I$(LUAJIT_INC) $(SDL_CFLAGS) $(KWS_CFLAGS) -pthread -DMYAGENT_ROOT=\"$(ROOT)\"
 
 # LuaJIT is always linked statically; no system luajit binary is needed at runtime.
 STATIC_LIBS := -Wl,-Bstatic -lSDL2_ttf -lSDL2_image -lSDL2 $(LUAJIT_A) -Wl,-Bdynamic
 
 myagent-voice: main.c lua_embed.h $(LIBXDO)
-	$(CC) $(CFLAGS) -rdynamic $(RPATH) -o $@ main.c $(STATIC_LIBS) $(SDL_STATIC_DEPS) -lasound -pthread -lm -ldl
+	$(CC) $(CFLAGS) -rdynamic $(RPATH) -o $@ main.c $(STATIC_LIBS) $(SDL_STATIC_DEPS) -lasound -pthread -lm -ldl $(KWS_LIBS)
 
 # Fallback build when the SDL static archives are unavailable.
 dynamic: main.c lua_embed.h $(LIBXDO)
-	$(CC) $(CFLAGS) -rdynamic $(RPATH) -o myagent-voice main.c $(LUAJIT_A) $(SDL_LIBS) -lasound -pthread -lm -ldl
+	$(CC) $(CFLAGS) -rdynamic $(RPATH) -o myagent-voice main.c $(LUAJIT_A) $(SDL_LIBS) -lasound -pthread -lm -ldl $(KWS_LIBS)
 
 lua_embed.h: gen_embed.py ../../tools/winctl.lua ../../tools/xdo.lua ../icon.png
 	python3 gen_embed.py -o $@ winctl_lua=../../tools/winctl.lua \
