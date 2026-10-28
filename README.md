@@ -159,6 +159,7 @@ gui/launch.sh                                    # 说唤醒词测试 KWS
 
 说明：模型合计约 600 MB；SenseVoice 首次运行会在其工作目录写 `fbank_lfr_cmvn_feature.json`（已加入 `.gitignore`）；本机 i5-2400 上 ASR 约 1–2 秒，Kokoro 短句约 6–8 秒，唤醒应答会在后台预合成。
 语音回复默认开启，由 `tools/speak_watch.sh`（LuaJIT FFI）用本地 Kokoro 朗读助手回复；`VOICE_SPEAK_REPLY=0` 关闭。
+小音箱占用由常驻 `tools/speaker_watch.sh` 监测：VLC/手机音乐/TTS 一出声就自动暂停语音识别与唤醒词，声音结束自动恢复监听。
 
 ## 本地 OCR（PP-OCRv4）
 

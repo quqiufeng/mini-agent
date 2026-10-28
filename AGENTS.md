@@ -266,7 +266,8 @@ echo $! > /tmp/opencode/vlc.pid
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体；本地语音栈用 `tools/setup_local_voice.sh` 安装（sherpa-onnx、KWS/Kokoro 模型、SenseVoice.cpp CPU）。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
 - 语音回复默认开启：`start.sh`/`gui/launch.sh` 会拉起 `tools/speak_watch.sh`（LuaJIT FFI + libcurl/libjson-c，单实例），把大脑完成的回复用本地 Kokoro 念出来；`VOICE_SPEAK_REPLY=0` 关闭。全局 TTS 播放期间会用 `/tmp/myagent_tts.playing` 暂停麦克风，避免自唤醒。
-- 界面右上角常驻「当前模式」徽标：待唤醒 / 已唤醒 Ns / 开发模式 Ns / 暂停监听，开发模式按指令续期并实时倒计时。
+- 界面右上角常驻「当前模式」徽标：待唤醒 / 已唤醒 Ns / 开发模式 Ns / 播放中 · 暂停监听 / 暂停监听，开发模式按指令续期并实时倒计时。
+- 小音箱占用由常驻 `tools/speaker_watch.sh` 维护（`/tmp/myagent_speaker.state`）：VLC、手机音乐、TTS、闹钟等一出声就暂停 ASR/唤醒词，声音结束（sink 空闲）自动恢复监听。
 - 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `tools/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。
 - **开发模式（简化）**：说「程序员」→ KWS 命中即执行 `tools/dev_tui.sh`，打开/置前独立终端 `cd ~/my-agent && env -u OPENCODE... opencode`；3 分钟窗口内（每条指令把倒计时重置为 180 秒）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「退出程序员」关闭。
 
@@ -325,7 +326,8 @@ echo $! > /tmp/opencode/vlc.pid
 - 注意：远程 `voice/say.sh` 默认播放到远程自己的 sink；要让全屋小音响发声，用 `operator/tools/living_audio.sh`。
 - `tools/spectrum.sh [bands] [fps]`：抓 **USB 麦克风**音频频谱，输出 JSON Lines（`ts/rms/peak/bands`）；LuaJIT + parec + FFTW3；默认自动选 Comica，可用 `SPECTRUM_SOURCE` 覆盖。要抓播放频谱时传播放 sink 的 `.monitor`。
 - `tools/record_mic.sh [seconds] [out.wav]`：录制 USB 麦克风到 WAV，默认自动选 Comica。
-- `tools/test_say.sh "文本" [--voice <KOKORO_SID>] [--keep]`：**测试专用语音输出**；现场合成 WAV 后直接 `paplay`，不写 `/tmp/myagent_tts.playing`、不暂停麦克风/语音入口，也不碰回复流程；普通回复仍用 `speak_watch`/`tts.sh`。
+- `tools/test_say.sh "文本" [--voice <KOKORO_SID>] [--keep]`：**测试专用语音输出**；现场合成 WAV 后直接 `paplay`，不写 `/tmp/myagent_tts.playing`，也不碰回复流程；但小音箱出声时语音入口仍会按全局状态暂停监听。普通回复仍用 `speak_watch`/`tts.sh`。
+- `tools/speaker_watch.sh start|stop|status|restart`：**小音箱常驻状态监视**（单实例）。轮询 USB 音箱 sink（`alsa_output.usb-DUNU_DTC_480...`，可用 `SPEAKER_SINK` 覆盖）是否 RUNNING，原子写 `/tmp/myagent_speaker.state`（`busy|idle <ts>`）；GUI 读到 3 秒内的 `busy` 就暂停 ASR/唤醒词并显示「播放中 · 暂停监听」，空闲后自动恢复「待唤醒」。VLC、手机汽水音乐、TTS、闹钟等所有走小音箱的声音都算占用；`gui/launch.sh` 会自动拉起。
 - `tools/chrome.sh open <url>` / `dump <url>` / `shot <url> <out.png>` / `cdp [port]`：本地 Chrome 网页、headless DOM/截图、CDP（默认 9222，profile `~/.chrome-debug`）。已验证 Chrome 156 + CDP 可用；**本机 Chrome 可访问外网**，说“打开网页/打开 <网站>”就用 `chrome.sh open`。
 - `tools/google_search.sh "关键词" [count]`：本机 Chrome CDP（LuaJIT FFI WebSocket）打开 Google，输出正文和外部链接；headless 会被 CAPTCHA，必须 headful；Google 不可用/被拦截时自动回退 `deepseek_search.sh`。
 - `tools/deepseek_search.sh "查询" [--count N] [--content] [--json]` / `fetch <url> [--max-chars N]`：DeepSeek Search/Fetch API，实时资料检索 + 抓单页 Markdown；说“ai搜索/智能搜索/搜一下/查资料”用它，结果带来源 URL；密钥运行时读 `auth.json`，不打印。

@@ -25,7 +25,8 @@ tools/phone2.sh status         # 第二台 Redmi 手机：mDNS 自动连无线�
 tools/phone2.sh open wechat    # 打开微信；text 输入中文；shot 截图
 tools/spectrum.sh 32 30       # USB 麦克风频谱流（JSON Lines，LuaJIT + FFTW3）
 tools/record_mic.sh 5 /tmp/x.wav  # 录 USB 麦克风到 WAV
-tools/test_say.sh "测试语音输出"   # 测试专用：不写 tts 播放锁，麦克风/语音入口不受影响
+tools/test_say.sh "测试语音输出"   # 测试专用：不写 tts 播放锁；小音箱出声时监听仍按全局状态暂停
+tools/speaker_watch.sh status # 小音箱常驻监视（busy/idle），语音入口据此自动暂停/恢复监听
 tools/chrome.sh open https://example.com
 tools/chrome.sh dump https://example.com
 tools/chrome.sh shot https://example.com /tmp/x.png

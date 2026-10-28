@@ -220,6 +220,20 @@ static int tts_playing(void) {
     return access("/tmp/myagent_tts.playing", F_OK) == 0;
 }
 
+// 小音箱常驻监视进程（tools/speaker_watch.sh）维护 /tmp/myagent_speaker.state：
+// busy <ts> 表示小音箱正在出声，语音入口暂停监听；空闲后自动恢复。
+static int speaker_busy(void) {
+    FILE *f = fopen("/tmp/myagent_speaker.state", "r");
+    if (!f) return 0;
+    char st[16] = "";
+    long ts = 0;
+    int n = fscanf(f, "%15s %ld", st, &ts);
+    fclose(f);
+    if (n != 2 || strcmp(st, "busy") != 0) return 0;
+    time_t now = time(NULL);
+    return now >= ts && now - ts <= 3;
+}
+
 static void make_beep(void) {
     const int n = 16000 * 12 / 100;
     Sint16 *buf = malloc(sizeof(Sint16) * n);
@@ -412,7 +426,7 @@ static void *cap_thread(void *arg) {
             pcm_n += (size_t)r;
         }
         pthread_mutex_unlock(&mu);
-        if (!paused && !tts_playing()) kws_feed(buf, (size_t)r);
+        if (!paused && !tts_playing() && !speaker_busy()) kws_feed(buf, (size_t)r);
         static int reads = 0;
         if (getenv("VOICE_DEBUG") && ++reads % 100 == 0)
             fprintf(stderr, "[gui] reads=%d pcm_n=%zu\n", reads, pcm_n);
@@ -553,7 +567,12 @@ static void *worker(void *arg) {
         char text[1024] = "";
         if (out) {
             char *save = NULL, *line = strtok_r(out, "\n", &save), *last = NULL;
-            while (line) { if (*line) last = line; line = strtok_r(NULL, "\n", &save); }
+            while (line) {
+                // 跳过诊断行（远程回退会打印 "[voice] 未识别到内容" 等），避免当成指令转发
+                if (*line && strncmp(line, "[asr]", 5) != 0 && strncmp(line, "[voice]", 7) != 0)
+                    last = line;
+                line = strtok_r(NULL, "\n", &save);
+            }
             if (last) snprintf(text, sizeof text, "%s", last);
             free(out);
         }
@@ -816,7 +835,7 @@ int main(int argc, char **argv) {
                     dragging = 1;
                 } else if (x >= micbtn.x && x <= micbtn.x + micbtn.w && y >= micbtn.y && y <= micbtn.y + micbtn.h) cycle_mic();
                 else if (x >= pausebtn.x && x <= pausebtn.x + pausebtn.w && y >= pausebtn.y && y <= pausebtn.y + pausebtn.h) {
-                    paused = !paused; set_status(paused ? "已暂停" : "待唤醒");
+                    paused = !paused; set_status(paused ? "已暂停" : (speaker_busy() ? "播放中 · 暂停监听" : "待唤醒"));
                 } else if (x >= bvoldown.x && x <= bvoldown.x + bvoldown.w && y >= bvoldown.y && y <= bvoldown.y + bvoldown.h) {
                     if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/tools/volume.sh", "volume.sh", "down", (char *)NULL); _exit(1); }
                     set_status("音量 -");
@@ -891,6 +910,14 @@ int main(int argc, char **argv) {
         if (active_until > now_s() || dev_until > now_s()) ui_awake = 1;
         else if (ui_awake) { ui_awake = 0; set_status("待唤醒"); }
 
+        static int spk_was = -1;
+        int spk = speaker_busy();
+        if (spk != spk_was) {
+            spk_was = spk;
+            if (!paused) set_status(spk ? "播放中 · 暂停监听"
+                                        : (active_until > now_s() ? "已唤醒 · 在听" : "待唤醒"));
+        }
+
         if (cap_started) {
             pthread_mutex_lock(&mu);
             size_t total = pcm_n;
@@ -904,8 +931,9 @@ int main(int argc, char **argv) {
                     double rms = sqrt(sum / CH);
                     speech_rms = speech_rms * 0.8 + rms * 0.2;
                     static double thresh = -1; if (thresh < 0) { const char *t = getenv("VOICE_RMS"); thresh = t ? atof(t) : 1000; }
-                    int voiced = (now_s() < suppress_until || tts_playing()) ? 0 : (rms > thresh);
-                    if (paused) { recording = 0; seg_start = proc_pos + i + CH; continue; }
+                    int silent = now_s() < suppress_until || tts_playing() || speaker_busy();
+                    int voiced = silent ? 0 : (rms > thresh);
+                    if (paused || silent) { recording = 0; seg_start = proc_pos + i + CH; continue; }
                     if (voiced) {
                         if (!recording) { recording = 1; seg_start = proc_pos + i; }
                         quiet = 0;
@@ -982,6 +1010,7 @@ int main(int argc, char **argv) {
             const char *mode; SDL_Color mc;
             double now = now_s();
             if (paused) { mode = "暂停监听"; mc = orange; }
+            else if (speaker_busy()) { mode = "播放中 · 暂停监听"; mc = orange; }
             else if (dev_until > now) {
                 snprintf(mbuf, sizeof mbuf, "开发模式 %ds", (int)(dev_until - now + 0.999));
                 mode = mbuf; mc = purple;
