@@ -23,6 +23,7 @@ tools/ocr.sh /tmp/x.png       # 本地 PP-OCRv4 识别（失败回退远程）
 tools/alarm.sh in 10m "关火"   # 本地闹钟，到点语音提醒 5 遍；at 7:30 起床
 tools/phone2.sh status         # 第二台 Redmi 手机：mDNS 自动连无线调试
 tools/phone2.sh open wechat    # 打开微信；text 输入中文；shot 截图
+tools/wechat_show.sh start    # 打开微信并镜像到 GUI“当前应用”预览（scrcpy）
 tools/spectrum.sh 32 30       # USB 麦克风频谱流（JSON Lines，LuaJIT + FFTW3）
 tools/record_mic.sh 5 /tmp/x.wav  # 录 USB 麦克风到 WAV
 tools/test_say.sh "测试语音输出"   # 测试专用：不写 tts 播放锁；小音箱出声时监听仍按全局状态暂停
@@ -40,9 +41,12 @@ tools/tv_play.sh --find 寒战  # 只搜路径不播放
 tools/tv_play.sh stop         # 停止电视播放
 tools/tv_on.sh                 # 唤醒电视并切到 Android 首页
 tools/tv_on.sh --input hdmi3   # 切回 HDMI3
-tools/media.sh play 周杰伦     # NAS 搜索歌曲/美剧/电影 → 本机 VLC → USB 小音箱
+tools/media.sh play 周杰伦     # NAS 搜索歌曲/美剧/电影 → 本机 VLC → USB 小音箱（音频整列表顺序播放）
 tools/media.sh play 硅谷 --fullscreen  # 视频全屏到电视
-tools/media.sh stop            # 停止播放
+tools/media.sh pause / resume  # 暂停/继续（暂停时最小化 VLC）
+tools/media.sh next / prev     # 下一首/上一首（MPRIS）
+tools/media.sh stop            # 停止并退出 VLC
+tools/camera_block.sh status   # 遮住摄像头暂停（播放时自动启动）
 tools/volume.sh up / down      # 调 USB 小音箱 + 电视音量
 tools/volume.sh mute           # 静音切换
 tools/appshot.sh               # 抓当前应用截图给 GUI 右侧预览

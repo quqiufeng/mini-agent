@@ -10,3 +10,5 @@ devices.local.env
 fbank_lfr_cmvn_feature.json
 __pycache__/
 *.pyc
+tools/audio_level
+tools/camera_block

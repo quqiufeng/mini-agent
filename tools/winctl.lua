@@ -3,6 +3,8 @@
 -- 用法: winctl.lua focus <标题片段> | mirror-sync | mirror-hide | mirror-show | geom <标题片段|类名>
 local DIR = (arg[0] or ""):match("^(.*)/") or "."
 package.path = DIR .. "/?.lua;" .. package.path
+local ffi = require("ffi")
+ffi.cdef[[int usleep(unsigned int);]]
 local Xdo = require("xdo")
 
 local d = assert(Xdo.new())
@@ -46,6 +48,30 @@ elseif cmd == "mirror-sync" then
     local g = find_win("ai助手")
     local m = mirror_win()
     if g and m then d:move_window(m.id, g.geom.x + 480, g.geom.y) end
+elseif cmd == "mirror-follow" then
+    local lastx, lasty, lastw, lasth = -1, -1, -1, -1
+    local miss = 0
+    while true do
+        local g
+        for _, w in ipairs(d:windows()) do
+            if w.name and w.name:find("ai助手", 1, true) and w.geom and w.geom.w >= 800 then g = w end
+        end
+        if not g then g = find_win("ai助手") end
+        local m = mirror_win()
+        if g and m and g.geom then
+            local x, y = g.geom.x + 480, g.geom.y
+            local w, h = 405, 900
+            if x ~= lastx or y ~= lasty or w ~= lastw or h ~= lasth then
+                d:unmaximize_resize(m.id, x, y, w, h)
+                lastx, lasty, lastw, lasth = x, y, w, h
+            end
+            miss = 0
+        else
+            miss = miss + 1
+            if miss > 20 then break end
+        end
+        ffi.C.usleep(300000)
+    end
 elseif cmd == "mirror-hide" then
     local m = mirror_win()
     if m then d:hide(m.id) end

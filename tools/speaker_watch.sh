@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # @desc 小音箱常驻状态监视：USB 音箱 sink 在出声就写 busy，空闲写 idle，语音入口据此暂停/恢复监听
 # @usage tools/speaker_watch.sh start|stop|status|restart
+DIR="$(cd "$(dirname "$0")" && pwd)"
 # @rule 单实例常驻（PulseAudio/PipeWire 常驻进程维持正确判断）；所有走小音箱的声音（VLC/手机/TTS/闹钟）都算占用
 set -uo pipefail
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
@@ -41,11 +42,24 @@ case "${1:-start}" in
         fi
         ;;
     _loop)
-        trap 'rm -f "$STATE"' EXIT
-        while :; do
-            st=$(pactl list short sinks 2>/dev/null | awk -v s="$SINK" '$2 == s { print $NF; exit }')
-            if [ "$st" = "RUNNING" ]; then write_state busy; else write_state idle; fi
-            sleep "$INTERVAL"
+        THRESH="${SPEAKER_RMS:-80}"
+        PEAK_TH="${SPEAKER_PEAK:-800}"
+        HOLD_MS="${SPEAKER_HOLD_MS:-2000}"
+        last_busy=$(date +%s%N)
+        cleanup() { pkill -TERM -P $$ 2>/dev/null || true; rm -f "$STATE"; }
+        trap cleanup EXIT TERM INT
+        parec --device="$SINK.monitor" --format=s16le --rate=16000 --channels=1 \
+            --client-name=myagent-level 2>/dev/null | "$DIR/audio_level" | while read -r rms peak; do
+            now=$(date +%s%N)
+            busy=0
+            if [ "${rms:-0}" -gt "$THRESH" ] || [ "${peak:-0}" -gt "$PEAK_TH" ]; then
+                last_busy=$now; busy=1
+            fi
+            if [ "$busy" = 1 ] || [ $(( (now - last_busy) / 1000000 )) -lt "$HOLD_MS" ]; then
+                write_state busy
+            else
+                write_state idle
+            fi
         done
         ;;
     *)

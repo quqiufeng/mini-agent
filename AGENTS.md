@@ -208,7 +208,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 媒体/家居/手机/Kindle：`music.sh`、`tv.sh`、`camera.sh`、`photo.sh`、`phone.sh`、`ebook.sh`、`vacuum.sh`、`detect.sh`。
 - 网络拓扑：远程用 `ssh quqiufeng@192.168.1.10 '/opt/my-agent/operator/tools/netmap.sh scan'`（生成 `operator/devices.json`、`NETWORK.md`、`devices.env`）；本机用 `tools/netmap.sh scan`。
 - 手机：本机 USB/Wi-Fi ADB 直控（`adb`）；IP 变了用 `tools/phone_ip.sh`（按 MAC `76:d0:b4:67:89:a9` 查 ARP + 扫 5555，校验型号 Z18）；汽水音乐 `tools/phone_music.sh play|stop`（scrcpy 音频 → USB 小音箱）；远程 `operator/tools/phone.sh` 仍可用。
-- 第二台手机：Redmi Note 14 5G（微信，`192.168.1.59`，无线调试端口随机）用 `tools/phone2.sh connect|status|shot|open|text|key|tap|apps`；端口变化由 mDNS 自动发现。
+- 第二台手机：Redmi Note 14 5G（微信，`192.168.1.59`，MAC `de:d7:61:c6:17:0d`（固定），无线调试端口随机）用 `tools/phone2.sh connect|status|shot|open|text|key|tap|apps`；端口变化由 mDNS 自动发现，直连可用 `adb connect 192.168.1.59:5555`。显示微信到 GUI 右侧“当前应用”：`tools/wechat_show.sh start|stop|status`（复用汽水音乐的 scrcpy + `winctl.lua mirror-sync`）。
 - 内容/数据/搜索：`image.sh`、`img_video.sh`、`video_dub.sh`、`lora.sh`、`stock.sh`、`dash.sh`、`google_search.sh`、`git_trending.sh`、`weibo_*.sh`、`douyin.sh`。
 - 集群/会话：`remote.sh`；启动大脑：`operator/start.sh`（通常已在跑，不要随意重启）。
 
@@ -269,7 +269,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 界面右上角常驻「当前模式」徽标：待唤醒 / 已唤醒 Ns / 开发模式 Ns / 播放中 · 暂停监听 / 暂停监听，开发模式按指令续期并实时倒计时。
 - 小音箱占用由常驻 `tools/speaker_watch.sh` 维护（`/tmp/myagent_speaker.state`）：VLC、手机音乐、TTS、闹钟等一出声就暂停 ASR/唤醒词，声音结束（sink 空闲）自动恢复监听。
 - 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `tools/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。
-- **开发模式（简化）**：说「程序员」→ KWS 命中即执行 `tools/dev_tui.sh`，打开/置前独立终端 `cd ~/my-agent && env -u OPENCODE... opencode`；3 分钟窗口内（每条指令把倒计时重置为 180 秒）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「退出程序员」关闭。
+- **开发模式（简化）**：说「程序员」→ KWS 命中即执行 `tools/dev_tui.sh`，打开/置前独立终端 `cd ~/my-agent && env -u OPENCODE... opencode`；3 分钟窗口内（每条指令把倒计时重置为 180 秒）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「重置 / 重置倒计时 / 从0开始」只把倒计时恢复为 180 秒、不粘贴进 TUI；说「退出程序员」关闭。
 
 ### 5.1.2 能力与权限（靠 AGENTS.md）
 
@@ -333,7 +333,8 @@ echo $! > /tmp/opencode/vlc.pid
 - `tools/deepseek_search.sh "查询" [--count N] [--content] [--json]` / `fetch <url> [--max-chars N]`：DeepSeek Search/Fetch API，实时资料检索 + 抓单页 Markdown；说“ai搜索/智能搜索/搜一下/查资料”用它，结果带来源 URL；密钥运行时读 `auth.json`，不打印。
 - 手机操作：本机 `adb`（Z18 USB）；汽水音乐 `tools/phone_music.sh play|stop`；`phone_audio.sh` 同义。
 - `tools/volume.sh up|down|mute|set <0-153>|status`：调 USB 小音箱音量，电视醒着时同步按音量键（待机不动，避免点亮电视）。说“声音大一点/小一点/静音”→ 用它。
-- `tools/media.sh play <关键词> [第X季] [第Y集] [--fullscreen]`：NAS 搜索 + **本机 VLC**（默认）；剧集目录优先于同名歌曲，支持“第4季/第2集、S04E02”；音频走 USB 小音箱，视频默认窗口、加 `--fullscreen` 投到电视（HDMI3）；`list|stop|status`。说“播放 XX”一律用它；只有明确说“电视播放 XX”才用 `tools/tv_play.sh`。
+- `tools/media.sh play <关键词> [第X季] [第Y集] [--fullscreen]`：NAS 搜索 + **本机 VLC**（默认）；剧集目录优先于同名歌曲，支持“第4季/第2集、S04E02”；音频默认整列表顺序播放（`MEDIA_PICK=N` 随机 N 首），走 USB 小音箱，视频默认窗口、加 `--fullscreen` 投到电视（HDMI3）；`pause|resume|toggle|next|prev|list|stop|status`（暂停时最小化 VLC，继续时恢复窗口）；GUI 本地识别“继续/恢复播放、暂停播放、下一首/上一首、音量大一点/小一点、静音”，直接调 `media.sh`/`volume.sh`，不经过大脑；`CAM_BLOCK=0` 可关闭摄像头遮挡暂停。说“播放 XX”一律用它；只有明确说“电视播放 XX”才用 `tools/tv_play.sh`。
+- `tools/camera_block.sh start|stop|status`：本机 OpenCV 直连 TP-Link 副码流（stream2/H.264）；播放时自动启动，**画面明显变暗（平均亮度 < 背景 55%，或 <40）持续 0.2 秒 → `media.sh pause`**（只暂停并最小化 VLC）；暂停/播放结束自动退出，恢复播放时重新启动。源码 `tools/camera_block.cpp`，编译：`g++ -O2 -std=c++17 -pthread tools/camera_block.cpp -o tools/camera_block $(pkg-config --cflags --libs opencv4)`；凭据在 `~/.env` 的 `TPLINK_RTSP`。
 - `tools/netmap.sh scan|show|sources`：本机扫 192.168.1.0/24，输出 `NETWORK.local.md`、`devices.local.json`、`devices.local.env`（`NETMAP_*_IP`）。
 - `tools/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。
 - 回环测试：`tts.sh` → 小音响 → `record_mic.sh` → `asr.sh` 已验证可行。音量有三层：音响物理旋钮、本机 OS 音量（PipeWire/Pulse）、ALSA PCM。`tts.sh` 默认用 `SMALLPC_AOUT=pulse`，因此 OS 音量可调；100% + 麦克风增益最大容易削波，回环时建议适当降低。短句识别准确，长句可能有误差。

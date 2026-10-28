@@ -31,7 +31,7 @@ cd ~/my-agent
 ## 依赖
 
 - `tmux`、`opencode`、`curl`、`ffmpeg`、`parec`
-- 系统库：`libcurl`、`libjson-c`、`libfftw3`（LuaJIT FFI 直调，无 Python）
+- 系统库：`libcurl`、`libjson-c`、`libfftw3`（LuaJIT FFI 直调，无 Python）、`libopencv-dev`（摄像头遮挡暂停）
 - Chrome / Chromium、`adb`、`scrcpy`、`xdotool`、`scrot`
 - 到远程 `quqiufeng@192.168.1.10` 的免密 SSH
 - 远程 `/opt/my-agent` 的白名单工具（TTS/ASR、微信、媒体、手机等）

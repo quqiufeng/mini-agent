@@ -26,7 +26,7 @@
 #endif
 
 #define LW 480
-#define PW 450
+#define PW 405
 #define W (LW + PW)
 #define H 900
 #ifndef MYAGENT_ROOT
@@ -38,6 +38,8 @@
 #define SEND_BIN ROOT "/send.sh"
 #define TUI_BIN ROOT "/tools/dev_tui.sh"
 #define TTS_BIN ROOT "/tools/tts.sh"
+#define MEDIA_BIN ROOT "/tools/media.sh"
+#define VOLUME_BIN ROOT "/tools/volume.sh"
 #define ACK_WAV "/tmp/myagent_ack.wav"
 #define ACK_TXT "/tmp/myagent_ack.txt"
 
@@ -531,6 +533,24 @@ static void normalize(const char *in, char *out, size_t osz) {
     out[j] = 0;
 }
 
+// 无规律的英文字母/数字（音乐、噪声误识别）不转发给大脑或开发 TUI
+static int garble_text(const char *s) {
+    size_t n = strlen(s);
+    int has_wide = 0, digits = 0, max_digits = 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c >= 0x80) has_wide = 1;
+        if (c >= '0' && c <= '9') {
+            if (++digits > max_digits) max_digits = digits;
+        } else {
+            digits = 0;
+        }
+    }
+    if (!has_wide && n >= 16) return 1;
+    if (max_digits >= 6) return 1;
+    return 0;
+}
+
 static int strip_wake(const char *text, char *rest, size_t rsz) {
     const char *wake = getenv("VOICE_WAKE");
     if (!wake) wake = "你好星期五,星期五";
@@ -576,12 +596,53 @@ static void *worker(void *arg) {
             if (last) snprintf(text, sizeof text, "%s", last);
             free(out);
         }
+        { char cp[256]; snprintf(cp, sizeof cp, "cp -f '%s' /tmp/myagent_last_asr.wav", path); int _r = system(cp); (void)_r; }
         unlink(path);
         if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: asr-done rc=%d text=%s\n", rc, text);
         char norm[1024]; normalize(text, norm, sizeof norm);
         if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] asr=%s\n", text);
         // asr.sh 有时识别出文字但退出码非 0，有文字就继续处理
         if (!*norm) { set_status(active_until > now_s() ? "已唤醒 · 在听" : "待唤醒"); continue; }
+        if (garble_text(norm)) {
+            int _r = system("cp -f /tmp/myagent_last_asr.wav /tmp/myagent_garble.wav");
+            (void)_r;
+            fprintf(stderr, "[gui] drop garble: %s (saved /tmp/myagent_garble.wav)\n", text);
+            set_status("忽略无效语音");
+            continue;
+        }
+
+        // 媒体/音量语音快捷（本地执行，不转发大脑）：继续/暂停/切歌/音量
+        {
+            const char *bin = NULL, *act = NULL, *label = NULL;
+            if (strstr(norm, "继续播放") || strstr(norm, "恢复播放") ||
+                strstr(norm, "接着播放") || strstr(norm, "继续放")) {
+                bin = MEDIA_BIN; act = "resume"; label = "继续播放";
+            } else if (strstr(norm, "暂停播放") || strstr(norm, "暂停音乐") || strstr(norm, "暂停一下")) {
+                bin = MEDIA_BIN; act = "pause"; label = "暂停播放";
+            } else if (strstr(norm, "下一首") || strstr(norm, "下一曲") ||
+                       strstr(norm, "切歌") || strstr(norm, "换一首")) {
+                bin = MEDIA_BIN; act = "next"; label = "下一首";
+            } else if (strstr(norm, "上一首") || strstr(norm, "上一曲") || strstr(norm, "前一首")) {
+                bin = MEDIA_BIN; act = "prev"; label = "上一首";
+            } else if (strstr(norm, "音量大") || strstr(norm, "声音大") ||
+                       strstr(norm, "大点声") || strstr(norm, "大声点") || strstr(norm, "调大")) {
+                bin = VOLUME_BIN; act = "up"; label = "音量调大";
+            } else if (strstr(norm, "音量小") || strstr(norm, "声音小") ||
+                       strstr(norm, "小点声") || strstr(norm, "小声点") || strstr(norm, "调小")) {
+                bin = VOLUME_BIN; act = "down"; label = "音量调小";
+            } else if (strstr(norm, "静音")) {
+                bin = VOLUME_BIN; act = "mute"; label = "静音切换";
+            }
+            if (bin) {
+                char *margv[] = { "/usr/bin/timeout", "10", (char *)bin, (char *)act, NULL };
+                int mrc = 0; char *mout = run_capture(margv, &mrc); free(mout);
+                char line[160];
+                snprintf(line, sizeof line, "● %s%s", label, mrc == 0 ? "" : "（失败）");
+                add_line(line);
+                set_status(mrc == 0 ? label : "操作失败");
+                continue;
+            }
+        }
 
         char rest[1024];
         int woke = strip_wake(text, rest, sizeof rest);
@@ -596,6 +657,17 @@ static void *worker(void *arg) {
                                          "进入", "打开", "开启", "启动", "切换", "切到", "调到", "唤醒"};
             char cand[1024];
             snprintf(cand, sizeof cand, "%s", woke ? rest : norm);
+            // 开发模式内听到“重置/重置倒计时/科计师重置…”→ 倒计时恢复满 180 秒，不转发 TUI
+            if (now_s() < dev_until) {
+                char nc0[256]; normalize(cand, nc0, sizeof nc0);
+                if (strstr(nc0, "重置") || strcmp(nc0, "重新计时") == 0 ||
+                    strcmp(nc0, "从0开始") == 0 || strcmp(nc0, "从零开始") == 0) {
+                    dev_until = now_s() + dev_ms / 1000.0;
+                    add_line("● 开发模式倒计时已重置");
+                    set_status("开发模式 · 倒计时重置");
+                    continue;
+                }
+            }
             const char *p = cand;
             for (;;) {
                 int ch = 0;
@@ -652,6 +724,16 @@ static void *worker(void *arg) {
                 continue;
             }
             if (now_s() < dev_until) {
+                char nc[256]; normalize(cand, nc, sizeof nc);
+                int is_reset = (strcmp(nc, "重置") == 0 || strcmp(nc, "重新计时") == 0 ||
+                                strcmp(nc, "从0开始") == 0 || strcmp(nc, "从零开始") == 0 ||
+                                (strstr(nc, "重置") && (strstr(nc, "计时") || strstr(nc, "倒计时"))));
+                if (is_reset) {
+                    dev_until = now_s() + dev_ms / 1000.0;
+                    add_line("● 开发模式倒计时已重置");
+                    set_status("开发模式 · 倒计时重置");
+                    continue;
+                }
                 dev_until = now_s() + dev_ms / 1000.0;
                 char line[1100]; snprintf(line, sizeof line, "开发: %s", cand);
                 add_line(line);
@@ -843,13 +925,13 @@ int main(int argc, char **argv) {
                     if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/tools/volume.sh", "volume.sh", "up", (char *)NULL); _exit(1); }
                     set_status("音量 +");
                 } else if (x >= bprev.x && x <= bprev.x + bprev.w && y >= bprev.y && y <= bprev.y + bprev.h) {
-                    if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "prev", (char *)NULL); _exit(1); }
+                    if (fork() == 0) { execl(ROOT "/tools/media_ctl.sh", "media_ctl.sh", "prev", (char *)NULL); _exit(1); }
                     set_status("上一首"); preview_quick();
                 } else if (x >= bplay.x && x <= bplay.x + bplay.w && y >= bplay.y && y <= bplay.y + bplay.h) {
-                    if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "playpause", (char *)NULL); _exit(1); }
+                    if (fork() == 0) { execl(ROOT "/tools/media_ctl.sh", "media_ctl.sh", "playpause", (char *)NULL); _exit(1); }
                     set_status("播放/暂停"); preview_quick();
                 } else if (x >= bnext.x && x <= bnext.x + bnext.w && y >= bnext.y && y <= bnext.y + bnext.h) {
-                    if (fork() == 0) { execl(ROOT "/tools/phone_media.sh", "phone_media.sh", "next", (char *)NULL); _exit(1); }
+                    if (fork() == 0) { execl(ROOT "/tools/media_ctl.sh", "media_ctl.sh", "next", (char *)NULL); _exit(1); }
                     set_status("下一首"); preview_quick();
                 }
             } else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_LEFT) {
