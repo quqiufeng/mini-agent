@@ -38,8 +38,8 @@
 #define SEND_BIN ROOT "/send.sh"
 #define TUI_BIN ROOT "/tools/dev_tui.sh"
 #define TTS_BIN ROOT "/tools/tts.sh"
-#define MEDIA_BIN ROOT "/tools/media.sh"
-#define VOLUME_BIN ROOT "/tools/volume.sh"
+#define MEDIA_BIN ROOT "/tools/media_ctl.sh"
+#define VOLUME_BIN ROOT "/tools/volume_ctl.sh"
 #define ACK_WAV "/tmp/myagent_ack.wav"
 #define ACK_TXT "/tmp/myagent_ack.txt"
 
@@ -225,7 +225,19 @@ static int tts_playing(void) {
 // 小音箱常驻监视进程（tools/speaker_watch.sh）维护 /tmp/myagent_speaker.state：
 // busy <ts> 表示小音箱正在出声，语音入口暂停监听；空闲后自动恢复。
 static int speaker_busy(void) {
-    FILE *f = fopen("/tmp/myagent_speaker.state", "r");
+    FILE *f = fopen("/tmp/myagent_state/speaker", "r");
+    if (f) {
+        char st[16] = "";
+        long ts = 0;
+        int n = fscanf(f, "%15s %ld", st, &ts);
+        fclose(f);
+        if (n == 2) {
+            if (strcmp(st, "busy") != 0) return 0;
+            time_t now = time(NULL);
+            return now >= ts && now - ts <= 3;
+        }
+    }
+    f = fopen("/tmp/myagent_speaker.state", "r");
     if (!f) return 0;
     char st[16] = "";
     long ts = 0;
@@ -841,7 +853,7 @@ int main(int argc, char **argv) {
     unlink("/tmp/myagent_mirror.id");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
     if (chdir(ROOT) != 0) {}
-    SDL_Window *win = SDL_CreateWindow("ai助手", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_SHOWN);
+    SDL_Window *win = SDL_CreateWindow("ai助手", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_SHOWN | SDL_WINDOW_ALWAYS_ON_TOP);
     {
         SDL_RWops *rw = SDL_RWFromConstMem(icon_png, icon_png_len);
         if (rw) {

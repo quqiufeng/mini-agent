@@ -10,6 +10,7 @@ export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
 SERIAL="${PHONE2_SERIAL:-192.168.1.59:5555}"
 PIDFILE=/tmp/myagent-wechat-show.pid
 FOLLOW_PIDFILE=/tmp/myagent_mirror_follow.pid
+STATE="$(cd "$(dirname "$0")" && pwd)/state.sh"
 LOG=/tmp/myagent-wechat-show.log
 PKG=com.tencent.mm
 
@@ -39,6 +40,7 @@ case "${1:-start}" in
             --window-borderless --always-on-top --window-width 450 --window-height 900 \
             --window-title=scrcpy-wechat >"$LOG" 2>&1 </dev/null &
         echo $! > "$PIDFILE"
+        "$STATE" set display.wechat on "$(cat "$PIDFILE")"
         sleep 2
         "$DIR/lua.sh" "$DIR/winctl.lua" mirror-sync 2>/dev/null || true
         if [ -f "$FOLLOW_PIDFILE" ] && kill -0 "$(cat "$FOLLOW_PIDFILE")" 2>/dev/null; then
@@ -57,6 +59,7 @@ case "${1:-start}" in
         rm -f "$FOLLOW_PIDFILE"
         if running; then
             kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            "$STATE" set display.wechat off "$(cat "$PIDFILE")"
             rm -f "$PIDFILE" /tmp/myagent_mirror.id
             echo "已关闭微信预览"
         else

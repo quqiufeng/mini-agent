@@ -14,7 +14,8 @@
 #include <sys/types.h>
 #include <time.h>
 
-static const char *MEDIA_BIN = "/home/quqiufeng/my-agent/tools/pause_all.sh";
+static const char *MEDIA_BIN = "/home/quqiufeng/my-agent/tools/devctl.sh";
+static const char *STATE_BIN = "/home/quqiufeng/my-agent/tools/state.sh";
 
 static double now_s() {
     struct timespec ts;
@@ -109,6 +110,7 @@ int main(int argc, char **argv) {
     int covered_count = 0;
     double covered_since = 0;
     double cooldown_until = 0;
+    int last_cov = -1;
     while (true) {
         if (kill((pid_t)media_pid, 0) != 0) {
             logf("[camera_block] playback ended, exit wall=%ld\n", (long)time(NULL));
@@ -134,6 +136,13 @@ int main(int argc, char **argv) {
         }
         double ref = bg_mean > 150 ? 150.0 : bg_mean;
         bool covered = (mean < 50) || (mean < ref * 0.55);
+        if ((int)covered != last_cov) {
+            char scmd[256];
+            snprintf(scmd, sizeof scmd, "%s set camera %s >/dev/null 2>&1",
+                     STATE_BIN, covered ? "blocked" : "clear");
+            int _r = std::system(scmd); (void)_r;
+            last_cov = covered ? 1 : 0;
+        }
         double t = now_s();
         if (t < cooldown_until) {
             usleep(200000);
@@ -171,6 +180,7 @@ int main(int argc, char **argv) {
         usleep(200000);
     }
     logf("[camera_block] loop exit wall=%ld\n", (long)time(NULL));
+    { char scmd[256]; snprintf(scmd, sizeof scmd, "%s set camera clear >/dev/null 2>&1", STATE_BIN); int _r = std::system(scmd); (void)_r; }
     g_stop = true;
     return 0;
 }

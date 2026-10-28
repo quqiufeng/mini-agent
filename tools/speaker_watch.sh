@@ -13,6 +13,7 @@ INTERVAL="${SPEAKER_POLL:-0.3}"
 running() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
 
 write_state() {
+    "$DIR/state.sh" set speaker "$1" 2>/dev/null || true
     local tmp="$STATE.$$"
     printf '%s %s\n' "$1" "$(date +%s)" > "$tmp" && mv -f "$tmp" "$STATE"
 }
@@ -44,7 +45,7 @@ case "${1:-start}" in
     _loop)
         THRESH="${SPEAKER_RMS:-80}"
         PEAK_TH="${SPEAKER_PEAK:-800}"
-        HOLD_MS="${SPEAKER_HOLD_MS:-2000}"
+        HOLD_MS="${SPEAKER_HOLD_MS:-800}"
         last_busy=$(date +%s%N)
         cleanup() { pkill -TERM -P $$ 2>/dev/null || true; rm -f "$STATE"; }
         trap cleanup EXIT TERM INT

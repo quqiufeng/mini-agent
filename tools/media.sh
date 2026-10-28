@@ -7,6 +7,7 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
 PIDFILE=/tmp/myagent-media.pid
+STATE="$(cd "$(dirname "$0")" && pwd)/state.sh"
 AUDIO_EXT='flac|wma|ape|mp3|m4a|wav|aac|ogg'
 VIDEO_EXT='mkv|mp4|avi|ts|mov|m2ts|wmv|rmvb'
 
@@ -162,6 +163,7 @@ case "$cmd" in
         [ "$is_audio" = "1" ] && args+=(--no-video)
         setsid nohup vlc "${args[@]}" "${files[@]}" >/tmp/myagent-media.log 2>&1 &
         echo $! > "$PIDFILE"
+        "$STATE" set media.vlc playing "$(cat "$PIDFILE")"
         # 播放期间检测摄像头遮挡；被挡住就暂停（CAM_BLOCK=0 可关闭）
         if [ "${CAM_BLOCK:-1}" != "0" ]; then
             ( "$(dirname "$0")/camera_block.sh" start "$(cat "$PIDFILE")" >/dev/null 2>&1 ) &
@@ -188,6 +190,7 @@ case "$cmd" in
         ;;
     pause|resume|toggle)
         pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+        [ -n "$pid" ] || pid=$("$STATE" get media.vlc 2>/dev/null | awk '{print $3}')
         if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
             echo "没有在播放"; exit 1
         fi
@@ -203,6 +206,7 @@ case "$cmd" in
         esac
         [ "$status" = "$want" ] || dbus-send --session --type=method_call --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 \
             org.mpris.MediaPlayer2.Player.PlayPause >/dev/null 2>&1 || { echo "暂停/继续失败" >&2; exit 1; }
+        if [ "$want" = "Paused" ]; then "$STATE" set media.vlc paused "$pid"; else "$STATE" set media.vlc playing "$pid"; fi
         wid=""
         for w in $(xdotool search --name 'VLC media player' 2>/dev/null); do
             eval "$(xdotool getwindowgeometry --shell "$w" 2>/dev/null)"
@@ -231,6 +235,7 @@ case "$cmd" in
         ;;
     next|prev|previous)
         pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+        [ -n "$pid" ] || pid=$("$STATE" get media.vlc 2>/dev/null | awk '{print $3}')
         if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
             echo "没有在播放"; exit 1
         fi
@@ -249,6 +254,7 @@ case "$cmd" in
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true; echo "已停止"
         else echo "没有在播放"; fi
+        "$STATE" set media.vlc stopped "${pid:-0}"
         rm -f "$PIDFILE"
         ( "$(dirname "$0")/camera_block.sh" stop >/dev/null 2>&1 || true ) &
         ;;

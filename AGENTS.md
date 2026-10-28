@@ -333,7 +333,9 @@ echo $! > /tmp/opencode/vlc.pid
 - `tools/deepseek_search.sh "查询" [--count N] [--content] [--json]` / `fetch <url> [--max-chars N]`：DeepSeek Search/Fetch API，实时资料检索 + 抓单页 Markdown；说“ai搜索/智能搜索/搜一下/查资料”用它，结果带来源 URL；密钥运行时读 `auth.json`，不打印。
 - 手机操作：本机 `adb`（Z18 USB）；汽水音乐 `tools/phone_music.sh play|stop`；`phone_audio.sh` 同义。
 - `tools/volume.sh up|down|mute|set <0-153>|status`：调 USB 小音箱音量，电视醒着时同步按音量键（待机不动，避免点亮电视）。说“声音大一点/小一点/静音”→ 用它。
-- `tools/media.sh play <关键词> [第X季] [第Y集] [--fullscreen]`：NAS 搜索 + **本机 VLC**（默认）；剧集目录优先于同名歌曲，支持“第4季/第2集、S04E02”；音频默认整列表顺序播放（`MEDIA_PICK=N` 随机 N 首），走 USB 小音箱，视频默认窗口、加 `--fullscreen` 投到电视（HDMI3）；`pause|resume|toggle|next|prev|list|stop|status`（暂停时最小化 VLC，继续时恢复窗口）；GUI 本地识别“继续/恢复播放、暂停播放、下一首/上一首、音量大一点/小一点、静音”，直接调 `media.sh`/`volume.sh`，不经过大脑；`CAM_BLOCK=0` 可关闭摄像头遮挡暂停。说“播放 XX”一律用它；只有明确说“电视播放 XX”才用 `tools/tv_play.sh`。
+- `tools/devctl.sh`：**统一设备操作入口**（状态/媒体/手机/镜像/音量/摄像头/暂停），内部再调具体脚本；查询：`devctl state show`、`devctl status`。
+- `tools/media.sh play <关键词> [第X季] [第Y集] [--fullscreen]`：NAS 搜索 + **本机 VLC**（默认）；剧集目录优先于同名歌曲，支持“第4季/第2集、S04E02”；音频默认整列表顺序播放（`MEDIA_PICK=N` 随机 N 首），走 USB 小音箱，视频默认窗口、加 `--fullscreen` 投到电视（HDMI3）；`pause|resume|toggle|next|prev|list|stop|status`（暂停时最小化 VLC，继续时恢复窗口）；GUI 本地识别“继续/恢复播放、暂停播放、下一首/上一首、音量大一点/小一点、静音”，经 `media_ctl.sh`/`volume_ctl.sh` → `devctl`，按当前活动源分发，不经过大脑；`CAM_BLOCK=0` 可关闭摄像头遮挡暂停。说“播放 XX”用 `devctl media play`；只有明确说“电视播放 XX”才用 `tools/tv_play.sh`。
+- `tools/state.sh set|get|show|active-media|any-playing`：统一状态层，文件在 `/tmp/myagent_state/`，所有工具只通过它报告/判断设备状态。
 - `tools/camera_block.sh start|stop|status`：本机 OpenCV 直连 TP-Link 副码流（stream2/H.264）；播放时自动启动，**画面明显变暗（平均亮度 < 背景 55%，或 <40）持续 0.2 秒 → `media.sh pause`**（只暂停并最小化 VLC）；暂停/播放结束自动退出，恢复播放时重新启动。源码 `tools/camera_block.cpp`，编译：`g++ -O2 -std=c++17 -pthread tools/camera_block.cpp -o tools/camera_block $(pkg-config --cflags --libs opencv4)`；凭据在 `~/.env` 的 `TPLINK_RTSP`。
 - `tools/netmap.sh scan|show|sources`：本机扫 192.168.1.0/24，输出 `NETWORK.local.md`、`devices.local.json`、`devices.local.env`（`NETMAP_*_IP`）。
 - `tools/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。

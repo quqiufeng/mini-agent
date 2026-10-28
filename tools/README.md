@@ -14,6 +14,8 @@
 tools/lua.sh -e 'print(jit.version)'   # 优先用内嵌 LuaJIT 的 GUI 二进制，无需系统 luajit
 tools/http.lua / jsonc.lua / ws.lua / util.lua   # 内部 FFI 模块：libcurl / libjson-c / WebSocket / URL/base64
 tools/netscan.sh tcp 192.168.1 5555 400           # UDP 触发 ARP / TCP 扫描（netmap、phone_ip 内部用）
+tools/devctl.sh status         # 统一设备操作入口（状态/媒体/手机/镜像/音量/摄像头）
+tools/state.sh show            # 统一状态：/tmp/myagent_state
 tools/doctor.sh               # 检查依赖/大脑/远程/手机/Chrome
 tools/list.sh                 # 列出本地工具
 tools/now.sh                  # 本机时间

@@ -6,6 +6,7 @@ set -uo pipefail
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 PIDFILE=/tmp/myagent-phone-music.pid
 FOLLOW_PIDFILE=/tmp/myagent_mirror_follow.pid
+STATE="$(cd "$(dirname "$0")" && pwd)/state.sh"
 PKG=com.luna.music
 
 serial() {
@@ -28,6 +29,7 @@ case "${1:-}" in
         adb -s "$s" shell 'cmd media_session volume --stream 3 --set 20' >/dev/null 2>&1 || true
         adb -s "$s" shell 'input keyevent 126' >/dev/null 2>&1 || true
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            "$STATE" set media.phone playing "$(cat "$PIDFILE")" "$s"
             echo "已在播放（音频转发 pid=$(cat "$PIDFILE")）"; exit 0
         fi
         # 视频窗口钉在 GUI 右侧预览区（真同步），位置由 LuaJIT FFI/libxdo 设置
@@ -36,6 +38,7 @@ case "${1:-}" in
             --window-borderless --always-on-top --window-width 405 --window-height 900 \
             --window-title=scrcpy-music >/tmp/myagent-phone-music.log 2>&1 &
         echo $! > "$PIDFILE"
+        "$STATE" set media.phone playing "$(cat "$PIDFILE")" "$s"
         sleep 2
         "$(dirname "$0")/lua.sh" "$(dirname "$0")/winctl.lua" mirror-sync 2>/dev/null || true
         if [ -f "$FOLLOW_PIDFILE" ] && kill -0 "$(cat "$FOLLOW_PIDFILE")" 2>/dev/null; then
@@ -57,9 +60,11 @@ case "${1:-}" in
         fi
         if [ "$1" = "pause" ]; then
             adb -s "$s" shell input keyevent 127 >/dev/null 2>&1 || true
+            "$STATE" set media.phone paused "$(cat "$PIDFILE")" "$s"
             echo "已暂停"
         else
             adb -s "$s" shell input keyevent 126 >/dev/null 2>&1 || true
+            "$STATE" set media.phone playing "$(cat "$PIDFILE")" "$s"
             echo "已继续"
         fi
         ;;
@@ -71,7 +76,10 @@ case "${1:-}" in
         ( "$(dirname "$0")/camera_block.sh" stop >/dev/null 2>&1 || true ) &
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            "$STATE" set media.phone stopped "$(cat "$PIDFILE")"
             rm -f "$PIDFILE" /tmp/myagent_mirror.id
+        else
+            "$STATE" set media.phone stopped "${s:-0}"
         fi
         s=$(serial)
         [ -n "$s" ] && adb -s "$s" shell 'input keyevent 127' >/dev/null 2>&1 || true

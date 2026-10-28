@@ -4,10 +4,10 @@
 # @rule 只暂停正在播放的源；不关闭播放器
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
-st=$("$DIR/media.sh" status 2>/dev/null || true)
-case "$st" in
-    播放中*) "$DIR/media.sh" pause >/dev/null 2>&1 || true ;;
+srcs=$("$DIR/state.sh" any-playing 2>/dev/null || true)
+case " $srcs " in
+    *" media.vlc "*) "$DIR/media.sh" pause >/dev/null 2>&1 || true ;;
 esac
-if [ -f /tmp/myagent-phone-music.pid ] && kill -0 "$(cat /tmp/myagent-phone-music.pid)" 2>/dev/null; then
-    "$DIR/phone_music.sh" pause >/dev/null 2>&1 || true
-fi
+case " $srcs " in
+    *" media.phone "*) "$DIR/phone_music.sh" pause >/dev/null 2>&1 || true ;;
+esac
