@@ -291,6 +291,15 @@ static void *ack_synth(void *arg) {
     return NULL;
 }
 
+static void speak_async(const char *text) {
+    pid_t p = fork();
+    if (p == 0) {
+        setsid();
+        execl(TTS_BIN, "tts.sh", text, (char *)NULL);
+        _exit(1);
+    }
+}
+
 static void ack_speak(int play) {
     const char *txt = ack_text();
     pthread_mutex_lock(&mu);
@@ -693,6 +702,7 @@ static void *worker(void *arg) {
             if (dev_out) {
                 dev_until = 0;
                 add_line("● 退出开发模式");
+                speak_async("已退出开发者模式");
                 char *xargv[] = { "/usr/bin/timeout", "12", TUI_BIN, "stop", NULL };
                 int xrc = 0; char *xout = run_capture(xargv, &xrc); free(xout);
                 set_status("待唤醒");
@@ -706,6 +716,7 @@ static void *worker(void *arg) {
             }
             if (after) {
                 dev_until = now_s() + dev_ms / 1000.0;
+                speak_async("已进入开发者模式，三分钟");
                 if (*after) {
                     char line[1100]; snprintf(line, sizeof line, "开发: %s", after);
                     add_line(line);
@@ -976,6 +987,7 @@ int main(int argc, char **argv) {
             if (!entering) {
                 dev_until = 0;
                 add_line("● 退出开发模式");
+                speak_async("已退出开发者模式");
                 char *xargv[] = { "/usr/bin/timeout", "12", TUI_BIN, "stop", NULL };
                 int xrc = 0; char *xout = run_capture(xargv, &xrc); free(xout);
                 set_status("待唤醒");
@@ -983,6 +995,7 @@ int main(int argc, char **argv) {
                 dev_until = now_s() + dev_ms / 1000.0;
                 dev_drop_next_seg = 1;
                 add_line("● 开发模式（本地）→ TUI");
+                speak_async("已进入开发者模式，三分钟");
                 char *sargv[] = { "/usr/bin/timeout", "20", TUI_BIN, "start", NULL };
                 int src = 0; char *sout = run_capture(sargv, &src); free(sout);
                 set_status(src == 0 ? "开发模式 · 请说指令" : "dev TUI 启动失败");
