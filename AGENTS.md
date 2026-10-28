@@ -260,14 +260,15 @@ echo $! > /tmp/opencode/vlc.pid
 ### 5.1.1 语音 GUI（SDL2，本机）
 
 - `gui/sdl/`：C + SDL2/SDL2_ttf 小窗口；常驻采集 USB 麦克风（默认 Comica）→ **本地 sherpa-onnx KWS** 检测唤醒词；唤醒后才切句 → `tools/asr.sh`（本地 SenseVoice.cpp，失败回退远程）→ `tools/send.sh` 转发本地大脑。未唤醒时不做 ASR。
-- 本地唤醒词：`gui/kws/keywords.txt`（由 `tools/kws_keywords.py` 从 `VOICE_WAKE` 生成）；模型默认 `/opt/sherpa-onnx/models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01`，可用 `KWS_MODEL_DIR`/`KWS_THRESHOLD`（默认 0.1）/`KWS_SCORE`（默认 3.0）覆盖。唤醒后 10 秒内的话直接当指令；VAD 阈值 `VOICE_RMS`。
+- 本地唤醒词：`gui/kws/keywords.txt`（由 `tools/kws_keywords.py` 从 `VOICE_WAKE` 生成）；模型默认 `/opt/sherpa-onnx/models/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01`，可用 `KWS_MODEL_DIR`/`KWS_THRESHOLD`（默认 0.1）/`KWS_SCORE`（默认 3.0）覆盖。唤醒后 50 秒内的话直接当指令（有新指令倒计时重新计 50 秒）；VAD 阈值 `VOICE_RMS`。
 - 本地 TTS：`tools/tts.sh` 优先用 sherpa-onnx + Kokoro（`KOKORO_DIR`，默认 `/opt/sherpa-onnx/models/kokoro-multi-lang-v1_0`），失败回退远程。
 - 构建：`make -C gui/sdl`（静态链 LuaJIT + SDL，内嵌 `winctl.lua`/`xdo.lua`，`gui/lib/libxdo.so.3` 随包分发；KWS 链 `/opt/sherpa-onnx`，`make KWS=0` 可关闭；`--lua` 可当通用 Lua 运行器）；运行：`gui/launch.sh`；桌面项 `~/.local/share/applications/ai助手.desktop` 与桌面快捷方式 `~/Desktop/ai助手.desktop`。
 - 依赖：`libsdl2-dev`、`libsdl2-ttf-dev`、Noto CJK 字体；本地语音栈用 `tools/setup_local_voice.sh` 安装（sherpa-onnx、KWS/Kokoro 模型、SenseVoice.cpp CPU）。
 - GUI 有「暂停监听」「换麦」和文本输入；大脑忙时自动重试 3 次；回复显示在 TUI。
-- 语音回复：GUI 默认设 `SPEAK_REPLY=1`，`send.sh` 后台跑 `tools/spoken_reply.py` 从 opencode `/session` 抓取大脑短回复，用本地 TTS 朗读；`SPEAK_MAX` 默认 240 字，`VOICE_SPEAK_REPLY=0` 关闭。
+- 语音回复默认开启：`start.sh`/`gui/launch.sh` 会拉起 `tools/speak_watch.py`（单实例），把大脑完成的回复用本地 Kokoro 念出来；`VOICE_SPEAK_REPLY=0` 关闭。全局 TTS 播放期间会用 `/tmp/myagent_tts.playing` 暂停麦克风，避免自唤醒。
+- 界面右上角常驻「当前模式」徽标：待唤醒 / 已唤醒 Ns / 开发模式 Ns / 暂停监听，开发模式按指令续期并实时倒计时。
 - 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `tools/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。
-- **开发者模式（简化）**：说「开发者 / 开发者模式」→ `tools/dev_tui.sh` 打开独立终端 `cd ~/my-agent && opencode`；50 秒窗口内（每次指令续期）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「退出开发者」关闭。
+- **开发模式（简化）**：说「程序员」→ KWS 命中即执行 `tools/dev_tui.sh`，打开/置前独立终端 `cd ~/my-agent && env -u OPENCODE... opencode`；3 分钟窗口内（每条指令把倒计时重置为 180 秒）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「退出程序员」关闭。
 
 ### 5.1.2 能力与权限（靠 AGENTS.md）
 

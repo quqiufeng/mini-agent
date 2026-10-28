@@ -15,6 +15,8 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <math.h>
+#include <ctype.h>
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -50,6 +52,7 @@ static int paused = 0;
 static double active_until = 0;
 static volatile double kws_ack_at = 0;
 static volatile int kws_woke_pending = 0;
+static volatile int kws_dev_pending = 0;
 static char kws_woke_word[128] = "";
 static int g_kws_ready = 0;
 #ifdef HAVE_KWS
@@ -58,6 +61,8 @@ static const SherpaOnnxOnlineStream *g_kws_stream = NULL;
 #endif
 static double suppress_until = 0;
 static double dev_until = 0;
+static int g_always_asr = 1;
+static volatile int dev_drop_next_seg = 0;
 static int ack_busy = 0;
 static int ack_should_play = 0;
 static char *run_capture(char *const argv[], int *rc_out);
@@ -209,6 +214,27 @@ static char mic_name[128] = "Comica (plughw:Uni,0)";
 
 static double now_s(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return ts.tv_sec + ts.tv_nsec / 1e9; }
 
+static int wav_write(const char *path, const Sint16 *data, size_t n);
+
+static int tts_playing(void) {
+    return access("/tmp/myagent_tts.playing", F_OK) == 0;
+}
+
+static void make_beep(void) {
+    const int n = 16000 * 12 / 100;
+    Sint16 *buf = malloc(sizeof(Sint16) * n);
+    if (!buf) return;
+    for (int i = 0; i < n; i++) {
+        double env = 1.0;
+        int edge = 160;
+        if (i < edge) env = (double)i / edge;
+        else if (i > n - edge) env = (double)(n - i) / edge;
+        buf[i] = (Sint16)(7000 * env * sin(2 * M_PI * 880 * i / 16000));
+    }
+    wav_write("/tmp/myagent_beep.wav", buf, n);
+    free(buf);
+}
+
 static const char *ack_text(void) {
     const char *v = getenv("VOICE_ACK");
     return (v && *v) ? v : "在的，老板。有什么需要。";
@@ -344,7 +370,7 @@ static void kws_feed(const Sint16 *samples, size_t n) {
     const SherpaOnnxKeywordResult *r = SherpaOnnxGetKeywordResult(g_kws, g_kws_stream);
     if (r && r->keyword && r->keyword[0]) {
         SherpaOnnxResetKeywordStream(g_kws, g_kws_stream);
-        double active_ms = 10000;
+        double active_ms = 50000;
         const char *v = getenv("VOICE_ACTIVE_MS");
         if (v) active_ms = atof(v);
         active_until = now_s() + active_ms / 1000.0;
@@ -386,7 +412,7 @@ static void *cap_thread(void *arg) {
             pcm_n += (size_t)r;
         }
         pthread_mutex_unlock(&mu);
-        if (!paused) kws_feed(buf, (size_t)r);
+        if (!paused && !tts_playing()) kws_feed(buf, (size_t)r);
         static int reads = 0;
         if (getenv("VOICE_DEBUG") && ++reads % 100 == 0)
             fprintf(stderr, "[gui] reads=%d pcm_n=%zu\n", reads, pcm_n);
@@ -456,6 +482,29 @@ static char *run_capture(char *const argv[], int *rc_out) {
     return buf;
 }
 
+static int ci_prefix(const char *s, const char *pre) {
+    for (; *pre; pre++, s++) {
+        if (!*s || tolower((unsigned char)*s) != tolower((unsigned char)*pre)) return 0;
+    }
+    return 1;
+}
+
+static const char *dev_after(const char *p) {
+    static const char *V[] = {"开发者模式", "开发者", "开发模式", "程序员", "开发",
+                              "调试模式", "调试", "dev模式", "deve", "dave", "dve",
+                              "dev", "deb", "def", "戴夫", "迪夫", "得夫"};
+    for (size_t i = 0; i < sizeof(V)/sizeof(V[0]); i++) {
+        size_t l = strlen(V[i]);
+        int hit = 1;
+        for (size_t k = 0; k < l; k++) {
+            unsigned char a = (unsigned char)p[k], b = (unsigned char)V[i][k];
+            if (!a || (a < 128 && b < 128 ? tolower(a) != tolower(b) : a != b)) { hit = 0; break; }
+        }
+        if (hit) return p + l;
+    }
+    return NULL;
+}
+
 static void normalize(const char *in, char *out, size_t osz) {
     size_t j = 0;
     for (size_t i = 0; in[i] && j + 1 < osz; i++) {
@@ -512,16 +561,17 @@ static void *worker(void *arg) {
         if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: asr-done rc=%d text=%s\n", rc, text);
         char norm[1024]; normalize(text, norm, sizeof norm);
         if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] asr=%s\n", text);
-        if (rc != 0 || !*norm) { set_status(active_until > now_s() ? "已唤醒 · 在听" : "待唤醒"); continue; }
+        // asr.sh 有时识别出文字但退出码非 0，有文字就继续处理
+        if (!*norm) { set_status(active_until > now_s() ? "已唤醒 · 在听" : "待唤醒"); continue; }
 
         char rest[1024];
         int woke = strip_wake(text, rest, sizeof rest);
         int kws_recent = (kws_ack_at > 0 && now_s() - kws_ack_at < 8.0);
 
-        // 开发者模式（简化）：说「开发者/开发者模式」进入 50 秒窗口；窗口内的话原样进 TUI
+        // 开发模式（简化）：说「程序员」进入 3 分钟窗口；窗口内的话原样进 TUI
         {
             static double dev_ms = 0;
-            if (dev_ms <= 0) { const char *v = getenv("VOICE_DEV_ACTIVE_MS"); dev_ms = v ? atof(v) : 50000; }
+            if (dev_ms <= 0) { const char *v = getenv("VOICE_DEV_ACTIVE_MS"); dev_ms = v ? atof(v) : 180000; }
             static const char *DEVL[] = {"开发者模式", "开发模式", "开发者"};
             static const char *LEAD[] = {"请", "帮我", "我要", "我想", "现在", "马上", "开始",
                                          "进入", "打开", "开启", "启动", "切换", "切到", "调到", "唤醒"};
@@ -536,25 +586,39 @@ static void *worker(void *arg) {
                 }
                 if (!ch) break;
             }
-            if (strncmp(p, "退出开发者", strlen("退出开发者")) == 0 || strncmp(p, "退出开发", strlen("退出开发")) == 0) {
+            const char *after = dev_after(p);
+            int dev_out = 0;
+            if (after) {
+                const char *q = after;
+                while (*q == ' ') q++;
+                if (ci_prefix(q, "out") || ci_prefix(q, "出去") || strstr(p, "退出")) dev_out = 1;
+            }
+            if (!dev_out && strstr(p, "退出") &&
+                (strstr(p, "程序员") || strstr(p, "调试") || strstr(p, "开发者") ||
+                 strstr(p, "开发") || strstr(p, "戴夫"))) {
+                dev_out = 1;
+                after = p + strlen(p);
+            }
+            if (dev_out) {
                 dev_until = 0;
-                add_line("● 退出开发者模式");
+                add_line("● 退出开发模式");
                 char *xargv[] = { "/usr/bin/timeout", "12", TUI_BIN, "stop", NULL };
                 int xrc = 0; char *xout = run_capture(xargv, &xrc); free(xout);
                 set_status("待唤醒");
                 continue;
             }
-            const char *after = NULL;
-            for (size_t i = 0; i < sizeof(DEVL)/sizeof(DEVL[0]); i++) {
-                size_t l = strlen(DEVL[i]);
-                if (strncmp(p, DEVL[i], l) == 0) { after = p + l; break; }
+            if (!after) {
+                for (size_t i = 0; i < sizeof(DEVL)/sizeof(DEVL[0]); i++) {
+                    size_t l = strlen(DEVL[i]);
+                    if (strncmp(p, DEVL[i], l) == 0) { after = p + l; break; }
+                }
             }
             if (after) {
                 dev_until = now_s() + dev_ms / 1000.0;
                 if (*after) {
-                    char line[1100]; snprintf(line, sizeof line, "开发者: %s", after);
+                    char line[1100]; snprintf(line, sizeof line, "开发: %s", after);
                     add_line(line);
-                    set_status("开发者模式 → TUI");
+                    set_status("开发模式 → TUI");
                     if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: tui-start %s\n", after);
                     char *targv[] = { "/usr/bin/timeout", "20", TUI_BIN, "type", (char *)after, NULL };
                     int trc = 0; char *tout = run_capture(targv, &trc); free(tout);
@@ -564,15 +628,15 @@ static void *worker(void *arg) {
                 } else {
                     char *sargv[] = { "/usr/bin/timeout", "20", TUI_BIN, "start", NULL };
                     int src = 0; char *sout = run_capture(sargv, &src); free(sout);
-                    set_status(src == 0 ? "开发者模式 · 请说指令" : "dev TUI 启动失败");
+                    set_status(src == 0 ? "开发模式 · 请说指令" : "dev TUI 启动失败");
                 }
                 continue;
             }
             if (now_s() < dev_until) {
                 dev_until = now_s() + dev_ms / 1000.0;
-                char line[1100]; snprintf(line, sizeof line, "开发者: %s", cand);
+                char line[1100]; snprintf(line, sizeof line, "开发: %s", cand);
                 add_line(line);
-                set_status("开发者模式 → TUI");
+                set_status("开发模式 → TUI");
                 char *targv[] = { "/usr/bin/timeout", "20", TUI_BIN, "type", cand, NULL };
                 int trc = 0; char *tout = run_capture(targv, &trc); free(tout);
                 set_status(trc == 0 ? "已输入 TUI" : "TUI 输入失败");
@@ -581,7 +645,7 @@ static void *worker(void *arg) {
             }
         }
         static double active_ms = 0;
-        if (active_ms <= 0) { const char *v = getenv("VOICE_ACTIVE_MS"); active_ms = v ? atof(v) : 10000; }
+        if (active_ms <= 0) { const char *v = getenv("VOICE_ACTIVE_MS"); active_ms = v ? atof(v) : 50000; }
         if (woke) {
             active_until = now_s() + active_ms / 1000.0;
             if (!kws_recent) { add_line("● 唤醒"); ack_speak(1); }
@@ -599,7 +663,8 @@ static void *worker(void *arg) {
             continue;
         }
 
-        if (g_kws_ready || active_until > now_s()) {
+        if (active_until > now_s() || dev_until > now_s()) {
+            if (active_until > now_s()) active_until = now_s() + active_ms / 1000.0;
             char line[1100]; snprintf(line, sizeof line, "我: %s", text);
             add_line(line);
             set_status("识别: 已发送");
@@ -682,7 +747,12 @@ int main(int argc, char **argv) {
     g_kws_ready = kws_init();
     if (getenv("VOICE_DEBUG") || getenv("KWS_DEBUG"))
         fprintf(stderr, "[kws] state=%s\n", g_kws_ready ? "on" : "off");
+    {
+        const char *v = getenv("VOICE_ALWAYS_ASR");
+        if (v) g_always_asr = atoi(v) != 0;
+    }
     open_capture();
+    make_beep();
     // 大脑没起就先拉起来（start.sh 会开显式终端）
     if (system("curl --max-time 1 -sf http://127.0.0.1:4097/global/health >/dev/null 2>&1") != 0) {
         set_status("大脑启动中 …");
@@ -774,15 +844,51 @@ int main(int argc, char **argv) {
 
         if (kws_woke_pending) {
             kws_woke_pending = 0;
-            recording = 0; quiet = 0; seg_start = proc_pos;
             char line[220];
             snprintf(line, sizeof line, "● 唤醒（本地）：%s", kws_woke_word);
             add_line(line);
             set_status("已唤醒 · 在听");
-            ack_speak(1);
+            // 开发者/退出开发者本身就是命令，KWS 命中即执行，不等 ASR
+            if ((strstr(kws_woke_word, "退出") &&
+                 (strstr(kws_woke_word, "程序员") || strstr(kws_woke_word, "开发") ||
+                  strstr(kws_woke_word, "调试"))) ||
+                strstr(kws_woke_word, "dev-out") || strstr(kws_woke_word, "dev out"))
+                kws_dev_pending = -1;
+            else if (strstr(kws_woke_word, "程序员") || strstr(kws_woke_word, "开发模式") ||
+                     strstr(kws_woke_word, "开发") || strstr(kws_woke_word, "调试") ||
+                     strstr(kws_woke_word, "dev") || strstr(kws_woke_word, "戴夫"))
+                kws_dev_pending = 1;
+            // 唤醒词和指令常连在一起说：保留正在录的音频；没在录就回退 0.5s 预录
+            if (!recording) {
+                size_t pre = 8000;
+                seg_start = proc_pos > pre ? proc_pos - pre : 0;
+                play_file("/tmp/myagent_beep.wav");
+                suppress_until = now_s() + 0.15;
+            }
+        }
+        if (kws_dev_pending) {
+            int entering = kws_dev_pending > 0;
+            kws_dev_pending = 0;
+            double dev_ms = 180000;
+            const char *dv = getenv("VOICE_DEV_ACTIVE_MS");
+            if (dv) dev_ms = atof(dv);
+            if (!entering) {
+                dev_until = 0;
+                add_line("● 退出开发模式");
+                char *xargv[] = { "/usr/bin/timeout", "12", TUI_BIN, "stop", NULL };
+                int xrc = 0; char *xout = run_capture(xargv, &xrc); free(xout);
+                set_status("待唤醒");
+            } else {
+                dev_until = now_s() + dev_ms / 1000.0;
+                dev_drop_next_seg = 1;
+                add_line("● 开发模式（本地）→ TUI");
+                char *sargv[] = { "/usr/bin/timeout", "20", TUI_BIN, "start", NULL };
+                int src = 0; char *sout = run_capture(sargv, &src); free(sout);
+                set_status(src == 0 ? "开发模式 · 请说指令" : "dev TUI 启动失败");
+            }
         }
         static int ui_awake = 0;
-        if (active_until > now_s()) ui_awake = 1;
+        if (active_until > now_s() || dev_until > now_s()) ui_awake = 1;
         else if (ui_awake) { ui_awake = 0; set_status("待唤醒"); }
 
         if (cap_started) {
@@ -798,7 +904,7 @@ int main(int argc, char **argv) {
                     double rms = sqrt(sum / CH);
                     speech_rms = speech_rms * 0.8 + rms * 0.2;
                     static double thresh = -1; if (thresh < 0) { const char *t = getenv("VOICE_RMS"); thresh = t ? atof(t) : 1000; }
-                    int voiced = (now_s() < suppress_until) ? 0 : (rms > thresh);
+                    int voiced = (now_s() < suppress_until || tts_playing()) ? 0 : (rms > thresh);
                     if (paused) { recording = 0; seg_start = proc_pos + i + CH; continue; }
                     if (voiced) {
                         if (!recording) { recording = 1; seg_start = proc_pos + i; }
@@ -811,7 +917,8 @@ int main(int argc, char **argv) {
                             size_t a = seg_start, b = proc_pos + i + CH;
                             if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] flush len=%zu\n", b - a);
                             if (b > a && b - a > 12800) {
-                                if (!g_kws_ready || active_until > now_s())
+                                if (dev_drop_next_seg) dev_drop_next_seg = 0;
+                                else if (!g_kws_ready || active_until > now_s() || dev_until > now_s() || g_always_asr)
                                     enqueue_segment(pcm + a, b - a);
                                 else if (getenv("KWS_DUMP")) {
                                     static int dump_n = 0;
@@ -826,7 +933,8 @@ int main(int argc, char **argv) {
                     }
                 }
                 if (recording && total - seg_start >= (size_t)(8 * 16000)) {
-                    if (!g_kws_ready || active_until > now_s())
+                    if (dev_drop_next_seg) dev_drop_next_seg = 0;
+                    else if (!g_kws_ready || active_until > now_s() || dev_until > now_s() || g_always_asr)
                         enqueue_segment(pcm + seg_start, total - seg_start);
                     seg_start = total;
                 }
@@ -867,10 +975,30 @@ int main(int argc, char **argv) {
         }
         SDL_SetRenderDrawColor(ren, 24, 26, 30, 255); SDL_RenderClear(ren);
         SDL_Color white = { 230,232,238,255 }, gray = { 150,155,165,255 }, blue = { 120,170,255,255 }, green = { 120,220,150,255 };
+        SDL_Color purple = { 190,150,255,255 }, orange = { 255,180,110,255 };
         text(ren, big, "ai助手", 40, 30, white);
+        {
+            char mbuf[64];
+            const char *mode; SDL_Color mc;
+            double now = now_s();
+            if (paused) { mode = "暂停监听"; mc = orange; }
+            else if (dev_until > now) {
+                snprintf(mbuf, sizeof mbuf, "开发模式 %ds", (int)(dev_until - now + 0.999));
+                mode = mbuf; mc = purple;
+            } else if (active_until > now) {
+                snprintf(mbuf, sizeof mbuf, "已唤醒 %ds", (int)(active_until - now + 0.999));
+                mode = mbuf; mc = green;
+            } else { mode = "待唤醒"; mc = gray; }
+            int tw = 0, th = 0;
+            TTF_SizeUTF8(small, mode, &tw, &th);
+            SDL_Rect badge = { LW - tw - 34, 32, tw + 20, th + 10 };
+            SDL_SetRenderDrawColor(ren, 42, 46, 56, 255);
+            SDL_RenderFillRect(ren, &badge);
+            text(ren, small, mode, badge.x + 10, badge.y + 5, mc);
+        }
         text(ren, small, g_kws_ready
-             ? "唤醒词（本地）：你好星期五 / 星期五（10 秒内直接说指令）"
-             : "唤醒词：你好星期五 / 星期五（本地 KWS 未启用）", 40, 72, gray);
+             ? "唤醒：你好星期五（50s）；开发：程序员（退出程序员）"
+             : "唤醒：你好星期五（本地 KWS 未启用）", 40, 72, gray);
         char buf[600];
         snprintf(buf, sizeof buf, "麦克风: %s", mic_name);
         text(ren, small, buf, 40, 100, gray);

@@ -129,7 +129,7 @@ curl -L -o /opt/SenseVoice.cpp/models/sense-voice-small-q4_k.gguf \
 5) 生成唤醒词文件（修改唤醒词后需重新生成）：
 
 ```bash
-tools/kws_keywords.py "你好星期五,星期五,开发者,开发者模式,退出开发者" > gui/kws/keywords.txt
+tools/kws_keywords.py "你好星期五,程序员,退出程序员" > gui/kws/keywords.txt
 ```
 
 6) 构建并验证：
@@ -156,7 +156,7 @@ gui/launch.sh                                    # 说唤醒词测试 KWS
 | `make KWS=0` | 开启 | 关闭本地 KWS，退回文本唤醒 |
 
 说明：模型合计约 600 MB；SenseVoice 首次运行会在其工作目录写 `fbank_lfr_cmvn_feature.json`（已加入 `.gitignore`）；本机 i5-2400 上 ASR 约 1–2 秒，Kokoro 短句约 6–8 秒，唤醒应答会在后台预合成。
-语音回复：GUI 提交指令后由 `tools/spoken_reply.py` 抓取大脑短回复并用本地 Kokoro 朗读；`VOICE_SPEAK_REPLY=0` 可关闭，`SPEAK_MAX` 控制最长朗读字数。
+语音回复默认开启，由 `tools/speak_watch.py` 用本地 Kokoro 朗读助手回复；`VOICE_SPEAK_REPLY=0` 关闭。
 
 ## 本地 OCR（PP-OCRv4）
 

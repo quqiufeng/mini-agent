@@ -8,6 +8,8 @@ export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
 cd "$ROOT"
 if pgrep -x myagent-voice >/dev/null 2>&1; then
     xdotool search --name 'ai助手' windowactivate >/dev/null 2>&1 || true
+    setsid --fork "$ROOT/tools/speak_watch.py" >>/tmp/myagent-speak-watch.log 2>&1 </dev/null
     exit 0
 fi
+setsid --fork "$ROOT/tools/speak_watch.py" >>/tmp/myagent-speak-watch.log 2>&1 </dev/null
 exec "$ROOT/gui/sdl/myagent-voice" "$@"

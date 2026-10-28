@@ -36,9 +36,5 @@ r.raise_for_status()
 print("sent")
 PY
 
-if [ "${SPEAK_REPLY:-0}" = "1" ]; then
-  echo "$(date '+%F %T') spawn speak: $TEXT" >>/tmp/myagent-send.log
-  setsid nohup "$DIR/spoken_reply.py" "$TEXT" "$START_MS" \
-    >/tmp/myagent-speak.log 2>&1 </dev/null &
-  sleep 0.3
-fi
+# 语音回复由 tools/speak_watch.py 统一处理；标记本次是 GUI/语音发出的指令，只念它的回复
+date +%s > /tmp/myagent_speak_want

@@ -56,11 +56,17 @@ if [ "${TTS_NOPLAY:-0}" = "1" ]; then
   exit 0
 fi
 if command -v paplay >/dev/null 2>&1; then
-  paplay "$OUT"
+  play_cmd=(paplay "$OUT")
 elif command -v pw-play >/dev/null 2>&1; then
-  pw-play "$OUT"
+  play_cmd=(pw-play "$OUT")
 else
   echo "[tts] 没有 paplay/pw-play" >&2
   exit 1
 fi
+playing=/tmp/myagent_tts.playing
+touch "$playing"
+trap 'rm -f "$playing"' EXIT INT TERM
+"${play_cmd[@]}"
+rm -f "$playing"
+trap - EXIT
 echo "$OUT"

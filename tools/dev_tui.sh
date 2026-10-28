@@ -14,15 +14,10 @@ find_tui_win() {
     "$ROOT/tools/lua.sh" -e '
       package.path="'"$ROOT"'/tools/?.lua;"..package.path
       local Xdo=require("xdo"); local d=assert(Xdo.new())
-      local dev, oc, brain
       for _,w in ipairs(d:windows()) do
         local n=w.name or ""
-        if n:find("DEV TUI",1,true) then dev=w end
-        if n:find("BRAIN TUI",1,true) then brain=w end
-        if (n:find("OC |",1,true) or n:find("OpenCode",1,true)) and not n:find("BRAIN TUI",1,true) then oc=w end
-      end
-      local t=dev or oc
-      if t then print(tonumber(t.id)) end'
+        if n:find("DEV TUI",1,true) then print(tonumber(w.id)) return end
+      end'
 }
 
 paste_win() {
@@ -37,24 +32,42 @@ paste_win() {
       d:key(w,"ctrl+shift+v"); os.execute("sleep 0.2"); d:key(w,"Return")' "$wid"
 }
 
+activate_win() {
+    local wid="$1"
+    [ -n "$wid" ] || return 0
+    if command -v xdotool >/dev/null 2>&1 && \
+       xdotool windowactivate "$wid" windowraise "$wid" >/dev/null 2>&1; then
+        return 0
+    fi
+    "$ROOT/tools/lua.sh" -e '
+      package.path="'"$ROOT"'/tools/?.lua;"..package.path
+      local Xdo=require("xdo"); local d=assert(Xdo.new())
+      local w=tonumber(arg[1]); if not w then os.exit(1) end
+      d:show(w); d:activate(w)' "$wid"
+}
+
 start() {
     if has; then
         if [ -z "$(tmux list-clients -t "$SESSION" 2>/dev/null)" ]; then
-            setsid qterminal --workdir "$ROOT" -e "tmux attach -t $SESSION" >/dev/null 2>&1 &
+            env -u TMUX setsid qterminal --workdir "$ROOT" -e "tmux attach -t $SESSION" >/dev/null 2>&1 &
             sleep 2
         fi
     else
         local wid; wid=$(find_tui_win)
         if [ -n "$wid" ]; then
             echo "复用已有 TUI 窗口 $wid"
+            activate_win "$wid"
             return 0
         fi
-        tmux new-session -d -s "$SESSION" -c "$ROOT" "opencode"
+        tmux new-session -d -s "$SESSION" -c "$ROOT" \
+            "env -u OPENCODE -u OPENCODE_PID -u OPENCODE_SERVER opencode"
         tmux set-option -t "$SESSION" set-titles on
         tmux set-option -t "$SESSION" set-titles-string "DEV TUI"
-        setsid qterminal --workdir "$ROOT" -e "tmux attach -t $SESSION" >/dev/null 2>&1 &
+        env -u TMUX setsid qterminal --workdir "$ROOT" -e "tmux attach -t $SESSION" >/dev/null 2>&1 &
         sleep 2
     fi
+    local wid2; wid2=$(find_tui_win)
+    activate_win "$wid2"
     for _ in $(seq 1 20); do
         tmux capture-pane -p -t "$SESSION" 2>/dev/null | grep -q . && break
         sleep 0.3

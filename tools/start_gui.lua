@@ -59,3 +59,9 @@ if has_client() then
     sh("tmux set-option -t " .. SESSION .. " set-titles on 2>/dev/null")
     sh("tmux set-option -t " .. SESSION .. " set-titles-string 'BRAIN TUI' 2>/dev/null")
 end
+
+-- 统一语音回复：默认开启（只念第一句）；VOICE_SPEAK_REPLY=0 关闭
+if sh("test \"${VOICE_SPEAK_REPLY:-1}\" != 0") == true then
+    sh("setsid nohup " .. q(WORKDIR .. "/tools/speak_watch.py") ..
+        " >>/tmp/myagent-speak-watch.log 2>&1 </dev/null &")
+end
