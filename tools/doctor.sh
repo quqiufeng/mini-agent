@@ -18,24 +18,24 @@ check_cmd() {
   fi
 }
 
-check_py() {
-  if python3 -c "import $1" >/dev/null 2>&1; then
-    echo "OK   py   $1"
-  else
-    echo "FAIL py   $1"
-    fail=1
-  fi
+check_lib() {
+  local out
+  out=$(ldconfig -p 2>/dev/null || true)
+  case "$out" in
+    *"$1"*) echo "OK   lib  $1" ;;
+    *) echo "FAIL lib  $1"; fail=1 ;;
+  esac
 }
 
 echo "== 命令 =="
-for c in tmux opencode curl python3 adb scrcpy google-chrome xclip scrot; do
+for c in tmux opencode curl adb scrcpy google-chrome xclip scrot ffmpeg parec; do
   check_cmd "$c"
 done
 
 echo
-echo "== Python 模块 =="
-for m in requests numpy websocket; do
-  check_py "$m"
+echo "== LuaJIT FFI 库 =="
+for l in libcurl.so libjson-c.so libX11.so libfftw3.so; do
+  check_lib "$l"
 done
 
 echo

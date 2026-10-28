@@ -46,6 +46,12 @@ activate_win() {
       d:show(w); d:activate(w)' "$wid"
 }
 
+resize_win() {
+    local wid="$1"
+    [ -n "$wid" ] || return 0
+    DISPLAY="${DISPLAY:-:0}" "$ROOT/tools/win_resize.sh" "$wid" 1000 650 460 200 >/dev/null 2>&1 || true
+}
+
 start() {
     if has; then
         if [ -z "$(tmux list-clients -t "$SESSION" 2>/dev/null)" ]; then
@@ -56,6 +62,7 @@ start() {
         local wid; wid=$(find_tui_win)
         if [ -n "$wid" ]; then
             echo "复用已有 TUI 窗口 $wid"
+            resize_win "$wid"
             activate_win "$wid"
             return 0
         fi
@@ -67,6 +74,7 @@ start() {
         sleep 2
     fi
     local wid2; wid2=$(find_tui_win)
+    resize_win "$wid2"
     activate_win "$wid2"
     for _ in $(seq 1 20); do
         tmux capture-pane -p -t "$SESSION" 2>/dev/null | grep -q . && break

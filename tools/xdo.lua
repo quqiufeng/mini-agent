@@ -36,6 +36,25 @@ int XFlush(Display *display);
 int XDisplayWidth(Display *display, int screen);
 int XDisplayHeight(Display *display, int screen);
 int XTestFakeButtonEvent(Display *display, unsigned int button, Bool is_press, unsigned long delay);
+int XMoveResizeWindow(Display *display, Window w, int x, int y, unsigned int width, unsigned int height);
+int XRaiseWindow(Display *display, Window w);
+int usleep(unsigned int usec);
+
+typedef struct {
+    int type;
+    unsigned long serial;
+    int send_event;
+    Display *display;
+    Window window;
+    Atom message_type;
+    int format;
+    union { long l[5]; } data;
+} XClientMessageEvent;
+typedef union {
+    XClientMessageEvent xclient;
+    long pad[24];
+} XEvent;
+int XSendEvent(Display *display, Window w, Bool propagate, long event_mask, XEvent *event_send);
 
 xdo_t *xdo_new(const char *display);
 void xdo_free(xdo_t *xdo);
@@ -198,6 +217,32 @@ function Xdo:show(win)
 end
 function Xdo:move(win, x, y)
     return lib.xdo_move_mouse_relative_to_window(self.handle, win, x, y) == 0
+end
+
+-- 取消最大化并调整位置/大小（EWMH + Xlib）
+function Xdo:unmaximize_resize(win, x, y, w, h)
+    local state = X11.XInternAtom(self.dpy, "_NET_WM_STATE", 0)
+    local horz = X11.XInternAtom(self.dpy, "_NET_WM_STATE_MAXIMIZED_HORZ", 0)
+    local vert = X11.XInternAtom(self.dpy, "_NET_WM_STATE_MAXIMIZED_VERT", 0)
+    local ev = ffi.new("XEvent")
+    ev.xclient.type = 33
+    ev.xclient.send_event = 1
+    ev.xclient.display = self.dpy
+    ev.xclient.window = win
+    ev.xclient.message_type = state
+    ev.xclient.format = 32
+    ev.xclient.data.l[0] = 0
+    ev.xclient.data.l[1] = tonumber(horz)
+    ev.xclient.data.l[2] = tonumber(vert)
+    ev.xclient.data.l[3] = 1
+    local root = X11.XDefaultRootWindow(self.dpy)
+    X11.XSendEvent(self.dpy, root, 0, 0x180000, ev)
+    X11.XSync(self.dpy, 0)
+    ffi.C.usleep(250000)
+    X11.XMoveResizeWindow(self.dpy, win, x, y, w, h)
+    X11.XRaiseWindow(self.dpy, win)
+    X11.XSync(self.dpy, 0)
+    return true
 end
 function Xdo:move_abs(x, y) return lib.xdo_move_mouse(self.handle, x, y, 0) == 0 end
 function Xdo:mouse_down(button)

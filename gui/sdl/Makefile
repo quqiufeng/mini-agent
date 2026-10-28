@@ -1,4 +1,5 @@
 CC ?= gcc
+LUAJIT ?= luajit
 ROOT ?= /home/quqiufeng/my-agent
 LUAJIT_INC ?= /usr/include/luajit-2.1
 LUAJIT_A ?= $(firstword $(wildcard \
@@ -43,8 +44,8 @@ myagent-voice: main.c lua_embed.h $(LIBXDO)
 dynamic: main.c lua_embed.h $(LIBXDO)
 	$(CC) $(CFLAGS) -rdynamic $(RPATH) -o myagent-voice main.c $(LUAJIT_A) $(SDL_LIBS) -lasound -pthread -lm -ldl $(KWS_LIBS)
 
-lua_embed.h: gen_embed.py ../../tools/winctl.lua ../../tools/xdo.lua ../icon.png
-	python3 gen_embed.py -o $@ winctl_lua=../../tools/winctl.lua \
+lua_embed.h: gen_embed.lua ../../tools/winctl.lua ../../tools/xdo.lua ../icon.png
+	$(LUAJIT) gen_embed.lua -o $@ winctl_lua=../../tools/winctl.lua \
 	  xdo_lua=../../tools/xdo.lua icon_png=../icon.png
 
 clean:

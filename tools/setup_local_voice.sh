@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # @desc 安装本地语音栈：sherpa-onnx(KWS + Kokoro TTS) + SenseVoice.cpp CPU ASR
 # @usage tools/setup_local_voice.sh
-# @rule 需要到 192.168.1.10 的免密 SSH、sudo、git/cmake/g++/python3；只在首次或升级时运行
+# @rule 需要到 192.168.1.10 的免密 SSH、sudo、git/cmake/g++；只在首次或升级时运行
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -67,14 +67,9 @@ if [ ! -r "$SV/models/sense-voice-small-q4_k.gguf" ]; then
     scp -q "$HOST:/data/models/sense-voice-small-q4_k.gguf" "$SV/models/"
 fi
 
-if ! python3 -c 'import pypinyin' >/dev/null 2>&1; then
-    echo "[voice] 安装 python3-pypinyin …"
-    sudo apt-get install -y python3-pypinyin
-fi
-
 if [ ! -s "$ROOT/gui/kws/keywords.txt" ]; then
     mkdir -p "$ROOT/gui/kws"
-    "$ROOT/tools/kws_keywords.py" "你好星期五,星期五,开发者,开发者模式,退出开发者" \
+    "$ROOT/tools/kws_keywords.sh" "你好星期五,程序员,退出程序员" \
         > "$ROOT/gui/kws/keywords.txt"
 fi
 

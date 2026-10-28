@@ -10,6 +10,8 @@ tmux session: local-my-agent
 
 `opencode` 的工作目录固定为 `~/my-agent`，启动时会自动读取 `~/my-agent/AGENTS.md`，因此它知道本机/远程的能力和调用方式。
 
+> 公式：交互入口（语音/文字/TUI）× 单脑（opencode :4097）× 白名单工具（`tools/*.sh`）× 自主开发测试（见下文与 `AGENTS.md` 5.4）。
+
 ## 用法
 
 ```bash
@@ -28,8 +30,8 @@ cd ~/my-agent
 
 ## 依赖
 
-- `tmux`、`opencode`、`curl`、`python3`
-- Python：`requests`、`numpy`、`websocket-client`
+- `tmux`、`opencode`、`curl`、`ffmpeg`、`parec`
+- 系统库：`libcurl`、`libjson-c`、`libfftw3`（LuaJIT FFI 直调，无 Python）
 - Chrome / Chromium、`adb`、`scrcpy`、`xdotool`、`scrot`
 - 到远程 `quqiufeng@192.168.1.10` 的免密 SSH
 - 远程 `/opt/my-agent` 的白名单工具（TTS/ASR、微信、媒体、手机等）
@@ -40,8 +42,8 @@ cd ~/my-agent
 Ubuntu 可参考：
 
 ```bash
-sudo apt-get install -y tmux python3 python3-requests python3-numpy \
-  python3-websocket scrcpy adb xdotool scrot \
+sudo apt-get install -y tmux curl ffmpeg pulseaudio-utils scrcpy adb xdotool scrot \
+  libcurl4 libjson-c5 libfftw3-3 \
   libluajit-5.1-dev libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
 ```
 
@@ -73,7 +75,7 @@ make -C gui/sdl          # 静态链 LuaJIT + SDL，KWS 链 /opt/sherpa-onnx；K
 tools/setup_local_voice.sh
 ```
 
-脚本会：复制 sherpa-onnx 运行时；下载中文 KWS 模型；从主电脑复制 Kokoro 模型；克隆并编译 SenseVoice.cpp（CPU）；复制 SenseVoice GGUF 模型；安装 `python3-pypinyin`。需要到主电脑的免密 SSH、`sudo`、`git/cmake/g++/python3`。
+脚本会：复制 sherpa-onnx 运行时；下载中文 KWS 模型；从主电脑复制 Kokoro 模型；克隆并编译 SenseVoice.cpp（CPU）；复制 SenseVoice GGUF 模型。需要到主电脑的免密 SSH、`sudo`、`git/cmake/g++`。
 
 ### 手动下载（没有主电脑时）
 
@@ -112,7 +114,7 @@ sudo cp -a /tmp/kokoro-multi-lang-v1_0 /opt/sherpa-onnx/models/
 4) SenseVoice.cpp CPU ASR：
 
 ```bash
-sudo apt-get install -y git cmake g++ python3-pypinyin
+sudo apt-get install -y git cmake g++
 git clone --recursive --depth 1 https://github.com/lovemefan/SenseVoice.cpp.git /tmp/SenseVoice.cpp
 sudo mv /tmp/SenseVoice.cpp /opt/SenseVoice.cpp
 sudo chown -R "$USER" /opt/SenseVoice.cpp
@@ -129,7 +131,7 @@ curl -L -o /opt/SenseVoice.cpp/models/sense-voice-small-q4_k.gguf \
 5) 生成唤醒词文件（修改唤醒词后需重新生成）：
 
 ```bash
-tools/kws_keywords.py "你好星期五,程序员,退出程序员" > gui/kws/keywords.txt
+tools/kws_keywords.sh "你好星期五,程序员,退出程序员" > gui/kws/keywords.txt
 ```
 
 6) 构建并验证：
@@ -156,7 +158,7 @@ gui/launch.sh                                    # 说唤醒词测试 KWS
 | `make KWS=0` | 开启 | 关闭本地 KWS，退回文本唤醒 |
 
 说明：模型合计约 600 MB；SenseVoice 首次运行会在其工作目录写 `fbank_lfr_cmvn_feature.json`（已加入 `.gitignore`）；本机 i5-2400 上 ASR 约 1–2 秒，Kokoro 短句约 6–8 秒，唤醒应答会在后台预合成。
-语音回复默认开启，由 `tools/speak_watch.py` 用本地 Kokoro 朗读助手回复；`VOICE_SPEAK_REPLY=0` 关闭。
+语音回复默认开启，由 `tools/speak_watch.sh`（LuaJIT FFI）用本地 Kokoro 朗读助手回复；`VOICE_SPEAK_REPLY=0` 关闭。
 
 ## 本地 OCR（PP-OCRv4）
 
@@ -221,6 +223,14 @@ tools/ocr.sh /tmp/x.png
 | `send.sh` | POST `/tui/append-prompt` + `/tui/submit-prompt` |
 | `tools/` | 本地能力层；每个能力一个 `*.sh`，头部有 `@desc`/`@usage` |
 | `tools/doctor.sh` | 只读检查依赖、本地大脑、远程、手机、Chrome CDP |
+
+## 自主开发与测试（本地闭环）
+
+- 新能力 = `tools/<name>.sh`（`@desc`/`@usage`/`@rule`）+ 实现；大脑只调 `tools/*`。
+- 改 GUI：`make -C gui/sdl`；改 `AGENTS.md`：`./stop.sh && ./start.sh`。
+- 自测要看真实结果：`scrot` + `read` 看图、`tools/ocr.sh` 回读、`tts.sh`→`record_mic.sh`→`asr.sh` 语音回环、`tools/doctor.sh` 健康检查；返回码 0 不算通过。
+- 证据（截图路径/OCR/日志）写进回复；新工具同步登记到 `tools/README.md` 和 `AGENTS.md` 5.3。
+- 详细约定见 `AGENTS.md` 5.4；完整模型见远程 `/opt/my-agent/automation.md`。
 
 ## 与 remote my-agent 的差异
 

@@ -51,13 +51,11 @@ to_text() {
     for pair in "${POLY[@]}"; do
         src=${src//"${pair%%:*}"/ ${pair#*:}}
     done
-    printf '%s' "$src" | uconv -x Han-Latin 2>/dev/null |
-        python3 -c 'import sys,unicodedata
-s=unicodedata.normalize("NFD",sys.stdin.read())
-words=["".join(c for c in w if c.isalnum() and ord(c)<128).lower() for w in s.split()]
-words=[w for w in words if w]
-mode=sys.argv[1]
-print("".join(words) if mode=="full" else "".join(w[0] for w in words))' "$2"
+    printf '%s' "$src" | uconv -x 'Han-Latin; Latin-ASCII' 2>/dev/null |
+        awk -v mode="$2" 'BEGIN{ORS=""}
+            { for (i=1;i<=NF;i++) { w=$i; gsub(/[^A-Za-z0-9]/,"",w);
+                if (w=="") continue;
+                if (mode=="full") printf "%s", tolower(w); else printf "%s", tolower(substr(w,1,1)); } }'
 }
 
 if printf '%s' "$KW" | grep -q '[^ -~]'; then
@@ -99,13 +97,7 @@ done
 shot() { "${ADB[@]}" exec-out screencap -p > /tmp/tencent_search.png; }
 
 field_text() {
-    "$DIR/ocr.sh" "$1" 2>/dev/null | python3 -c '
-import json,sys,re
-try: boxes=json.load(sys.stdin)
-except Exception: print(""); sys.exit()
-parts=[b["text"] for b in boxes if 160<=b["y"]<=215 and 335<=b["x"]<=720]
-print(re.sub(r"[^A-Za-z0-9]","","".join(parts)).upper())
-'
+    "$DIR/ocr.sh" "$1" 2>/dev/null | "$DIR/lua.sh" "$DIR/ocr_filter.lua" field 335 160 720 215
 }
 
 read_field() {
@@ -163,17 +155,11 @@ shot
 echo "结果截图: /tmp/tencent_result.png"
 
 if [ -n "$EXPECT" ]; then
-    RES=$("$DIR/ocr.sh" /tmp/tencent_result.png | python3 -c '
-import json,sys,re
-expect=re.sub(r"\s+","",sys.argv[1])
-try: boxes=json.load(sys.stdin)
-except Exception: print("OCR_FAIL\t"); sys.exit()
-text=re.sub(r"\s+","","".join(b["text"] for b in boxes))
-print(("OK" if expect in text else "MISMATCH")+"\t"+text[:120])
-' "$EXPECT")
-    case "$RES" in
-        OK*) echo "OCR 校验: 匹配" ;;
-        *)   echo "OCR 校验: 未匹配 ($RES)"; exit 3 ;;
+    TXT=$("$DIR/ocr.sh" /tmp/tencent_result.png 2>/dev/null | "$DIR/lua.sh" "$DIR/ocr_filter.lua" flat)
+    EXP=$(printf '%s' "$EXPECT" | tr -d '[:space:]')
+    case "$TXT" in
+        *"$EXP"*) echo "OCR 校验: 匹配" ;;
+        *)        echo "OCR 校验: 未匹配 (${TXT:0:120})"; exit 3 ;;
     esac
 fi
 

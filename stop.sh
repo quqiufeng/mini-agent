@@ -9,5 +9,5 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
 fi
 pkill -f "opencode attach http://127.0.0.1:$PORT" 2>/dev/null && echo "已停止 TUI"
 pkill -f "opencode serve --port $PORT" 2>/dev/null && echo "已停止 serve"
-pkill -f "tools/speak_watch.py" 2>/dev/null && echo "已停止语音回复"
+pkill -f "speak_watch.lua" 2>/dev/null && echo "已停止语音回复"
 echo "完成"

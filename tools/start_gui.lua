@@ -20,7 +20,7 @@ local function has_client()
 end
 
 local function open_window()
-    return sh("qterminal --workdir " .. q(WORKDIR) ..
+    return sh("env -u TMUX qterminal --workdir " .. q(WORKDIR) ..
         " -e " .. q("tmux attach -t " .. SESSION .. ":tui") .. " >/dev/null 2>&1 &")
 end
 
@@ -60,8 +60,13 @@ if has_client() then
     sh("tmux set-option -t " .. SESSION .. " set-titles-string 'BRAIN TUI' 2>/dev/null")
 end
 
+-- 大脑窗口不要最大化：开成 1000x650 的小窗
+sh("ID=$(DISPLAY=${DISPLAY:-:0} xdotool search --name 'BRAIN TUI' 2>/dev/null | tail -1); " ..
+   "if [ -n \"$ID\" ]; then DISPLAY=${DISPLAY:-:0} " ..
+   q(WORKDIR .. "/tools/win_resize.sh") .. " \"$ID\" 1000 650 460 200 >/dev/null 2>&1; fi")
+
 -- 统一语音回复：默认开启（只念第一句）；VOICE_SPEAK_REPLY=0 关闭
 if sh("test \"${VOICE_SPEAK_REPLY:-1}\" != 0") == true then
-    sh("setsid nohup " .. q(WORKDIR .. "/tools/speak_watch.py") ..
+    sh("setsid nohup " .. q(WORKDIR .. "/tools/speak_watch.sh") ..
         " >>/tmp/myagent-speak-watch.log 2>&1 </dev/null &")
 end
