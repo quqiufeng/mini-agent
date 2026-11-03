@@ -8,6 +8,8 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
+_tv=$("$ROOT/tools/device.sh" ip tv 2>/dev/null || true)
+TV_SERIAL=${TV_SERIAL:-${_tv:+$_tv:5555}}
 TV_SERIAL=${TV_SERIAL:-192.168.1.110:5555}
 ADB=(adb -s "$TV_SERIAL")
 

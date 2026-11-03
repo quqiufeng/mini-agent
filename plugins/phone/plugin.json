@@ -40,5 +40,13 @@
     "停止投屏": [
       "stop"
     ]
+  },
+  "context": {
+    "libs": [
+      "adb",
+      "scrcpy"
+    ],
+    "audio": "usb",
+    "default_package": "com.luna.music"
   }
 }

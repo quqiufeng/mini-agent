@@ -81,12 +81,16 @@ static int run_wait(const char *prog, const char *const argv[]) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3 || strcmp(argv[1], "--watch") != 0) {
-        logf("用法: %s --watch <media_pid>\n", argv[0]);
-        return 2;
+    bool resident = (argc >= 2 && strcmp(argv[1], "--resident") == 0);
+    long media_pid = 0;
+    if (!resident) {
+        if (argc < 3 || strcmp(argv[1], "--watch") != 0) {
+            logf("用法: %s --watch <media_pid> | --resident\n", argv[0]);
+            return 2;
+        }
+        media_pid = atol(argv[2]);
+        if (media_pid <= 0) return 2;
     }
-    long media_pid = atol(argv[2]);
-    if (media_pid <= 0) return 2;
 
     const char *url = getenv("TPLINK_RTSP");
     if (!url || !*url) {
@@ -127,34 +131,48 @@ int main(int argc, char **argv) {
     int covered_count = 0;
     double covered_since = 0;
     double cooldown_until = 0;
+    double last_progress = now_s();
     int last_cov = -1;
     while (true) {
-        if (kill((pid_t)media_pid, 0) != 0) {
+        if (!resident && kill((pid_t)media_pid, 0) != 0) {
             logf("[camera_block] playback ended, exit wall=%ld\n", (long)time(NULL));
             break;
         }
         cv::Mat f;
         {
             std::lock_guard<std::mutex> lk(g_mu);
-            if (g_frame_ts > last_ts) { f = g_frame.clone(); last_ts = g_frame_ts; }
+            if (g_frame_ts > last_ts) { f = g_frame.clone(); last_ts = g_frame_ts; last_progress = now_s(); }
         }
-        if (f.empty()) { usleep(100000); continue; }
+        if (f.empty()) {
+            if (resident && now_s() - last_progress > 10.0) {
+                logf("[camera_block] resident stalled, exit for restart\n");
+                break;
+            }
+            usleep(100000);
+            continue;
+        }
 
         cv::Mat small, gray;
         cv::resize(f, small, cv::Size(320, (int)(f.rows * 320.0 / f.cols)));
         cv::cvtColor(small, gray, cv::COLOR_BGR2GRAY);
         double mean = cv::mean(gray)[0];
+        cv::Rect roi(gray.cols * 0.1, gray.rows * 0.2, gray.cols * 0.8, gray.rows * 0.7);
+        cv::Mat center = gray(roi), lap;
+        cv::Laplacian(center, lap, CV_64F);
+        cv::Scalar lm, ls;
+        cv::meanStdDev(lap, lm, ls);
+        double lapvar = ls[0] * ls[0];
 
-        // 只用亮度：遮挡后画面明显变暗
+        // 亮度明显下降，或中心区域几乎没有细节（镜头被挡/失焦）
         if (mean > bg_mean * 1.3) {
             bg = small.clone();
             bg_mean = mean;
             cv::imwrite("/tmp/myagent_camera_bg.jpg", bg);
         }
         double ref = bg_mean > 150 ? 150.0 : bg_mean;
-        bool covered = (mean < 50) || (mean < ref * 0.55);
+        bool covered = (mean < 50) || (mean < ref * 0.55) || (lapvar < 5.0);
         if ((int)covered != last_cov) {
-            const char *sav[] = { "state.sh", "set", "camera", covered ? "blocked" : "clear", NULL };
+            const char *sav[] = { "state.sh", "set", "device.camera.cover", covered ? "blocked" : "clear", NULL };
             run_wait(STATE_BIN, sav);
             last_cov = covered ? 1 : 0;
         }
@@ -166,15 +184,15 @@ int main(int argc, char **argv) {
         if (covered) {
             if (covered_count == 0) covered_since = t;
             covered_count++;
-            logf("[camera_block] covered mean=%.0f bg=%.0f n=%d wall=%ld\n",
-                 mean, bg_mean, covered_count, (long)time(NULL));
+            logf("[camera_block] covered mean=%.0f lapvar=%.1f bg=%.0f n=%d wall=%ld\n",
+                 mean, lapvar, bg_mean, covered_count, (long)time(NULL));
             if (covered_count >= 2 && t - covered_since >= 0.2) {
                 const char *pav[] = { "devctl.sh", "pause", NULL };
                 logf("[camera_block] blocked -> pause wall=%ld\n", (long)time(NULL));
                 int rc = run_wait(MEDIA_BIN, pav);
                 logf("[camera_block] pause rc=%d\n", rc);
                 covered_count = 0;
-                cooldown_until = t + 1.0;
+                cooldown_until = t + 5.0;
             }
         } else {
             covered_count = 0;
@@ -182,7 +200,7 @@ int main(int argc, char **argv) {
         usleep(200000);
     }
     logf("[camera_block] loop exit wall=%ld\n", (long)time(NULL));
-    { const char *sav[] = { "state.sh", "set", "camera", "clear", NULL }; run_wait(STATE_BIN, sav); }
+    { const char *sav[] = { "state.sh", "set", "device.camera.cover", "clear", NULL }; run_wait(STATE_BIN, sav); }
     g_stop = true;
     return 0;
 }

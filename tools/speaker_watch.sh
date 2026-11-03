@@ -5,7 +5,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # @rule 单实例常驻（PulseAudio/PipeWire 常驻进程维持正确判断）；所有走小音箱的声音（VLC/手机/TTS/闹钟）都算占用
 set -uo pipefail
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-SINK="${SPEAKER_SINK:-alsa_output.usb-DUNU_DTC_480_DTC_480-00.analog-stereo}"
+SINK="${SPEAKER_SINK:-$("$DIR/device.sh" sink speaker 2>/dev/null || true)}"
+SINK="${SINK:-alsa_output.usb-DUNU_DTC_480_DTC_480-00.analog-stereo}"
 STATE="${SPEAKER_STATE:-/tmp/myagent_speaker.state}"
 PIDFILE=/tmp/myagent-speaker-watch.pid
 INTERVAL="${SPEAKER_POLL:-0.3}"
@@ -45,6 +46,12 @@ case "${1:-start}" in
         PEAK_TH="${SPEAKER_PEAK:-800}"
         HOLD_MS="${SPEAKER_HOLD_MS:-800}"
         last_busy=$(date +%s%N)
+        last_state=""
+        write_state_if_changed() {
+            [ "$1" = "$last_state" ] && return 0
+            last_state="$1"
+            write_state "$1"
+        }
         cleanup() { pkill -TERM -P $$ 2>/dev/null || true; rm -f "$STATE"; }
         trap cleanup EXIT TERM INT
         parec --device="$SINK.monitor" --format=s16le --rate=16000 --channels=1 \
@@ -55,9 +62,9 @@ case "${1:-start}" in
                 last_busy=$now; busy=1
             fi
             if [ "$busy" = 1 ] || [ $(( (now - last_busy) / 1000000 )) -lt "$HOLD_MS" ]; then
-                write_state busy
+                write_state_if_changed busy
             else
-                write_state idle
+                write_state_if_changed idle
             fi
         done
         ;;

@@ -25,7 +25,8 @@ if [ "${OCR_LOCAL:-1}" != "0" ] && [ -r "$OCR_LIB" ] && [ -r "$OCR_MODELS/ch_PP-
     tail -3 /tmp/myagent-ocr.log >&2 || true
 fi
 
-REMOTE=${OCR_REMOTE:-quqiufeng@192.168.1.10}
+_host=$("$ROOT/tools/device.sh" ip computer 2>/dev/null || true)
+REMOTE=${OCR_REMOTE:-quqiufeng@${_host:-192.168.1.10}}
 TMP="/tmp/ocr_$$_$(basename "$IMG")"
 scp -q "$IMG" "$REMOTE:$TMP" || { echo "scp 失败" >&2; exit 1; }
 ssh -o BatchMode=yes "$REMOTE" "cd /opt/my-agent && luajit -e 'package.path=package.path..\";./?.lua\"; local ocr=require(\"agentkit.ocr\"); local b=ocr.run(\"$TMP\"); local c=require(\"cjson\"); print(c.encode(b))'" 2>/dev/null | grep -a '^\[{' | tail -1

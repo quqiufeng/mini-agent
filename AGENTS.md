@@ -271,6 +271,7 @@ echo $! > /tmp/opencode/vlc.pid
 - 语音回复默认开启：`start.sh`/`gui/launch.sh` 会拉起 `plugins/voice/speak_watch.sh`（LuaJIT FFI + libcurl/libjson-c，单实例），把大脑完成的回复用本地 Kokoro 念出来；`VOICE_SPEAK_REPLY=0` 关闭。全局 TTS 播放期间会用 `/tmp/myagent_tts.playing` 暂停麦克风，避免自唤醒。
 - 界面右上角常驻「当前模式」徽标：待唤醒 / 已唤醒 Ns / 开发模式 Ns / 播放中 · 暂停监听 / 暂停监听，开发模式按指令续期并实时倒计时。
 - 小音箱占用由常驻 `tools/speaker_watch.sh` 维护（`/tmp/myagent_speaker.state`）：VLC、手机音乐、TTS、闹钟等一出声就暂停 ASR/唤醒词，声音结束（sink 空闲）自动恢复监听。
+- GUI 启动 `tools/device_supervisor.sh`：常驻统一设备探测（refresh/probe），并启动摄像头 resident watcher；摄像头遮挡事件由 `camera_block` 常驻检测，媒体播放不再自己起临时 watcher（无 supervisor 时仍回退临时模式）。
 - 右侧「当前应用」预览：**默认隐藏**（窗口 480 宽），点「预览」展开/收起；`ui.preview=on` 时 scrcpy 镜像显示，off 时隐藏。执行指令后（2/6/12 秒）调 `plugins/system/appshot.sh` 抓取。
 - **开发模式（简化）**：说「程序员」→ KWS 命中即执行 `tools/dev_tui.sh`，打开/置前独立终端 `cd ~/my-agent && env -u OPENCODE... opencode`；10 分钟窗口内（每条指令把倒计时重置为 600 秒）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「重置 / 重置倒计时 / 从0开始」只把倒计时恢复为 600 秒、不粘贴进 TUI；说「退出程序员」关闭；进入/退出时会用本地 TTS 语音提醒。
 
@@ -351,9 +352,17 @@ echo $! > /tmp/opencode/vlc.pid
 - `plugins/media/media.sh play <关键词> [第X季] [第Y集] [--fullscreen]`：NAS 搜索 + **本机 VLC**（默认）；剧集目录优先于同名歌曲，支持“第4季/第2集、S04E02”；音频默认整列表顺序播放（`MEDIA_PICK=N` 随机 N 首），走 USB 小音箱，视频默认窗口、加 `--fullscreen` 投到电视（HDMI3）；`pause|resume|toggle|next|prev|list|stop|status`（暂停时最小化 VLC，继续时恢复窗口）；GUI 本地识别“继续/恢复播放、暂停播放、下一首/上一首、音量大一点/小一点、静音”，经 `media_ctl.sh`/`volume_ctl.sh` → `devctl`，按当前活动源分发，不经过大脑；`CAM_BLOCK=0` 可关闭摄像头遮挡暂停。说“播放 XX”用 `devctl media play`；只有明确说“电视播放 XX”才用 `plugins/tv/tv_play.sh`。
 - 开发者 TUI：`tools/dev_tui.sh` 默认独立 server `DEV_PORT=4098`（`operator/ports.env`），tmux `dev-tui:0 serve / :1 tui`；TUI 用 `opencode attach --dir <项目> --continue`，优先打开该目录上次 session，没有则新建。
 - `tools/plugin.sh new|validate|list|index|test`：自主开发插件；新插件模板含 plugin.json、entry、Lua 实现、test。
-- `tools/session.sh enter|get|touch|exit|route`：会话模式（kvcache 后端）；`lib/session.lua` + `lib/ffi/kv.lua`，TTL/单写；构建：`lib/native/build.sh`（源码 `/opt/my_db_src`）。
-- `tools/state.sh set|get|show|active-media|any-playing`：统一状态层，文件在 `/tmp/myagent_state/`，所有工具只通过它报告/判断设备状态。
-- `plugins/camera/camera_block.sh start|stop|status`：本机 OpenCV 直连 TP-Link 副码流（stream2/H.264）；播放时自动启动，**画面明显变暗（平均亮度 < 背景 55%，或 <40）持续 0.2 秒 → `media.sh pause`**（只暂停并最小化 VLC）；暂停/播放结束自动退出，恢复播放时重新启动。源码 `tools/camera_block.cpp`，编译：`g++ -O2 -std=c++17 -pthread tools/camera_block.cpp -o tools/camera_block $(pkg-config --cflags --libs opencv4)`；凭据在 `~/.env` 的 `TPLINK_RTSP`。
+- `tools/session.sh enter|get|touch|exit|route`：会话模式（kvcache 后端）；`lib/session.lua` 合并 `plugin.json` 的 `session_defaults/context`，把 `session.<id>.context` JSON 存 KV；`lib/plugin_manifest.lua` 提供 intents/session_commands/context；TTL/单写。
+- `tools/state.sh set|get|show|active-media|any-playing`：统一状态层；`lib/state_core.lua` 以 `~/.myagent/kv` 为单一源，同时镜像 `~/.myagent/state/` 供 GUI/旧脚本读取。
+- 设备层 `lib/device/`：`registry`（静态+netmap 全量设备）、`state_machine`（状态机）、`lease`（KV 租约）、`health`、`probe`、`events`、`cache`、`topology`；`lib/device.lua` 保持 `tools/device.sh` 接口；`device_supervisor.sh` 由 GUI 启动，负责常驻刷新/探测与摄像头 resident。
+- KV 并发：CLI 入口用 `flock` 串行化 writer；`lib/ffi/kv.lua` 对 open/set/sync/close 使用 `.kv.lock`；状态变化才发事件，避免探测造成事件风暴。
+- `tools/device.sh refresh|status|probe|show|ip|serial|sink|source|json|state <id>|acquire|release|lease|tidy`：设备统一入口；插件取 IP/serial/sink 优先走这里。
+- `tools/kv.sh check|compact|rebuild`：kvcache 健康检查/索引压缩/重建（rebuild 会保留 items，旧目录备份为 `.bak.<ts>`；建议空闲时手动执行）。
+- 事件：`lib/events/bus.lua` 把事件追加到 KV `event.<seq>`（TTL），带 flock 序号锁，支持 `recent/since/subscribe`；`lib/device/events.lua` 统一发 `device.*` 事件。
+- 摄像头可用性在 `device.camera`，遮挡业务状态在 `device.camera.cover`（blocked/clear），两者不再混用。
+- `tools/state.sh`、`session.sh`、`device.sh` 统一用 `flock` 串行化 KV 写，避免多进程并发打开 kvcache 导致索引损坏；KV 自身对 open/set/sync 也加了进程锁。
+- 联网设备统一 ID：gateway/computer/nas/tv/camera/phone/speaker/microphone/vlc/mirror/this；netmap 未识别设备以 `net.<ip>` 注册。注册表/状态/租约/拓扑都在 KV。
+- `plugins/camera/camera_block.sh resident|start <media_pid>|stop-temp|stop|status`：本机 OpenCV 直连 TP-Link 副码流；`resident` 由 device_supervisor 启动，媒体停止用 `stop-temp` 不杀常驻实例；RTSP host 从 device 层 camera 记录同步，凭据仍从 `~/.env`。（stream2/H.264）；播放时自动启动，**画面明显变暗（平均亮度 < 背景 55%，或 <40）持续 0.2 秒 → `media.sh pause`**（只暂停并最小化 VLC）；暂停/播放结束自动退出，恢复播放时重新启动。源码 `tools/camera_block.cpp`，编译：`g++ -O2 -std=c++17 -pthread tools/camera_block.cpp -o tools/camera_block $(pkg-config --cflags --libs opencv4)`；凭据在 `~/.env` 的 `TPLINK_RTSP`。
 - `plugins/system/netmap.sh scan|show|sources`：本机扫 192.168.1.0/24，输出 `NETWORK.local.md`、`devices.local.json`、`devices.local.env`（`NETMAP_*_IP`）。
 - `plugins/system/doctor.sh`：只读检查依赖、本地大脑、远程、手机、Chrome CDP。
 - 回环测试：`tts.sh` → 小音响 → `record_mic.sh` → `asr.sh` 已验证可行。音量有三层：音响物理旋钮、本机 OS 音量（PipeWire/Pulse）、ALSA PCM。`tts.sh` 默认用 `SMALLPC_AOUT=pulse`，因此 OS 音量可调；100% + 麦克风增益最大容易削波，回环时建议适当降低。短句识别准确，长句可能有误差。

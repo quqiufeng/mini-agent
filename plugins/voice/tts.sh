@@ -5,7 +5,9 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
+ROOT="$(cd "$DIR/../.." && pwd)"
+_host=$("$ROOT/tools/device.sh" ip computer 2>/dev/null || true)
+HOST="${REMOTE_HOST:-quqiufeng@${_host:-192.168.1.10}}"
 OUT="${TTS_LOCAL_OUT:-/tmp/myagent-tts.wav}"
 REMOTE_OUT="/tmp/myagent-tts-$$.wav"
 

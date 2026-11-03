@@ -13,17 +13,19 @@ pid_of() { "$STATE" get media.vlc 2>/dev/null | awk '{print $3}'; }
 vlc_alive() { [ -n "${1:-}" ] && [ "$1" -gt 1 ] 2>/dev/null && kill -0 "$1" 2>/dev/null || return 1; tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null | grep -q vlc; }
 AUDIO_EXT='flac|wma|ape|mp3|m4a|wav|aac|ogg'
 VIDEO_EXT='mkv|mp4|avi|ts|mov|m2ts|wmv|rmvb'
+NAS_IP=$("$DEVICE" ip nas 2>/dev/null || true)
+NAS_IP=${NAS_IP:-192.168.1.53}
 
 ensure_mount() {
     local m
-    m=$(ls -d /run/user/$(id -u)/gvfs/dav:host=192.168.1.53,port=5005,ssl=false* 2>/dev/null | head -1)
+    m=$(ls -d /run/user/$(id -u)/gvfs/dav:host=$NAS_IP,port=5005,ssl=false* 2>/dev/null | head -1)
     if [ -n "$m" ] && [ -d "$m/sata11-18072858035" ]; then echo "$m"; return 0; fi
     set -a; . "$HOME/.env"; set +a
     local cred
     enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
     cred="$(enc "$WEBDAV_USER"):$(enc "$WEBDAV_PASS")"
-    timeout 15 gio mount "dav://$cred@192.168.1.53:5005" >/dev/null 2>&1 || true
-    m=$(ls -d /run/user/$(id -u)/gvfs/dav:host=192.168.1.53,port=5005,ssl=false* 2>/dev/null | head -1)
+    timeout 15 gio mount "dav://$cred@$NAS_IP:5005" >/dev/null 2>&1 || true
+    m=$(ls -d /run/user/$(id -u)/gvfs/dav:host=$NAS_IP,port=5005,ssl=false* 2>/dev/null | head -1)
     [ -n "$m" ] && echo "$m" && return 0
     return 1
 }
@@ -171,7 +173,8 @@ case "$cmd" in
         "$STATE" set media.vlc playing "$vlcpid"
         # 播放期间检测摄像头遮挡；被挡住就暂停（CAM_BLOCK=0 可关闭）
         if [ "${CAM_BLOCK:-1}" != "0" ]; then
-            ( "$ROOT/plugins/camera/camera_block.sh" start "$vlcpid" >/dev/null 2>&1 ) &
+            cb="$("$ROOT/plugins/camera/camera_block.sh" status 2>/dev/null || true)"
+            case "$cb" in *running*) ;; *) ( "$ROOT/plugins/camera/camera_block.sh" start "$vlcpid" >/dev/null 2>&1 ) & ;; esac
         fi
         if [ "$is_audio" = "1" ]; then
             # 音频列表：把 VLC 置前并确保播放列表可见
@@ -259,7 +262,7 @@ case "$cmd" in
         else echo "没有在播放"; fi
         "$STATE" set media.vlc stopped "${pid:-0}"
         [ -n "$pid" ] && "$DEVICE" release vlc "$pid" >/dev/null 2>&1 || true
-        ( "$ROOT/plugins/camera/camera_block.sh" stop >/dev/null 2>&1 || true ) &
+        ( "$ROOT/plugins/camera/camera_block.sh" stop-temp >/dev/null 2>&1 || true ) &
         ;;
     status)
         pid="$(pid_of)"

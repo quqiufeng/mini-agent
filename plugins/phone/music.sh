@@ -21,6 +21,10 @@ serial() {
         m=$(adb -s "$s" shell getprop ro.product.model 2>/dev/null | tr -d '\r')
         case "$m" in *Z18*|*NX606J*) echo "$s"; return ;; esac
     done
+    ip=$("$ROOT/tools/device.sh" ip phone 2>/dev/null || true)
+    if [ -n "$ip" ] && adb -s "$ip:5555" get-state 2>/dev/null | grep -q device; then
+        echo "$ip:5555"; return
+    fi
     if adb -s 192.168.1.59:5555 get-state 2>/dev/null | grep -q device; then
         echo 192.168.1.59:5555; return
     fi

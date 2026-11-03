@@ -54,7 +54,8 @@ fi
 
 echo
 echo "== 远程 =="
-HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
+_host=$("$DIR/../../tools/device.sh" ip computer 2>/dev/null || true)
+HOST="${REMOTE_HOST:-quqiufeng@${_host:-192.168.1.10}}"
 if ssh -o BatchMode=yes -o ConnectTimeout=5 "$HOST" 'test -x /opt/my-agent/operator/plugins/system/netmap.sh' >/dev/null 2>&1; then
   echo "OK   ssh $HOST + 远程工具存在"
 else

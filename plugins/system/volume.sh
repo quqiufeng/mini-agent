@@ -3,8 +3,11 @@
 # @usage plugins/system/volume.sh up [步长] | down [步长] | mute | set <0-153> | status
 # @rule 说“声音大一点/小一点/静音/音量调到 X”→ plugins/system/volume.sh up|down|mute|set X
 set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-TV="${TV_SERIAL:-192.168.1.110:5555}"
+_tv=$("$ROOT/tools/device.sh" ip tv 2>/dev/null || true)
+TV="${TV_SERIAL:-${_tv:+$_tv:5555}}"
+TV="${TV:-192.168.1.110:5555}"
 STEP="${2:-5}"
 
 sink_now() {

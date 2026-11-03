@@ -4,7 +4,9 @@
 # @rule 本机做不了的能力统一走这里；工具名只允许 [a-z0-9_]+
 set -euo pipefail
 
-HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+_host=$("$ROOT/tools/device.sh" ip computer 2>/dev/null || true)
+HOST="${REMOTE_HOST:-quqiufeng@${_host:-192.168.1.10}}"
 ENV_ARGS=()
 
 while [ $# -gt 0 ]; do

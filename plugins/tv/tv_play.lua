@@ -3,14 +3,22 @@
 -- @usage tv_play.lua <关键词> | <NAS相对路径> | --find <关键词> | stop
 local DIR = (arg[0] or ""):match("^(.*)/") or "."
 local ROOT = DIR .. "/../.."
-package.path = DIR .. "/?.lua;" .. ROOT .. "/tools/?.lua;" .. ROOT .. "/lib/?.lua;" .. package.path
+package.path = DIR .. "/?.lua;" .. ROOT .. "/tools/?.lua;" .. ROOT .. "/lib/?.lua;" .. ROOT .. "/lib/device/?.lua;" .. package.path
 local core = require("core")
 local http = require("http")
 local U = require("util")
 local ffi = require("ffi")
 ffi.cdef[[int usleep(unsigned int usec);]]
 
-local TV = os.getenv("TV_SERIAL") or "192.168.1.110:5555"
+local function tv_serial()
+    local ok, reg = pcall(require, "registry")
+    if ok then
+        local d = reg.get("tv")
+        if d and d.ip then return d.ip .. ":5555" end
+    end
+    return "192.168.1.110:5555"
+end
+local TV = os.getenv("TV_SERIAL") or tv_serial()
 local VLC = "org.videolan.vlc/.StartActivity"
 local VIDEO_EXT = { [".mkv"] = true, [".mp4"] = true, [".avi"] = true, [".ts"] = true,
     [".m2ts"] = true, [".mov"] = true, [".wmv"] = true, [".flv"] = true,

@@ -394,9 +394,9 @@ host.trace
 - C4：voice/tv/system 实现已迁到 plugins（system 含 volume/alarm/netmap/search/chrome/ocr/win_resize）；spectrum 例外。
 - C5 完成：GUI 读新 state，媒体/音量走 entry；C 代码已去掉 `system()`。
 - 大脑 cwd `operator/`，权限由 `operator/opencode.json` + guard 限制；开发者 TUI cwd 项目根、独立 server 4098、宽权限。
-- 大脑新 session 的 directory 是 `operator`，开发 session 是项目根；TUI 各看各的。`dev_tui.sh` 清掉大脑环境变量，保持宽权限。
+- 设备层统一：`lib/device/*` + `tools/device.sh`，状态/租约/注册表写 KV；`device_supervisor` 由 GUI 常驻维护；事件写 `event.<seq>`；会话/plugin context 写 `session.<id>.context` JSON；KV 写入用 flock 串行化。
 - 自主开发插件：`tools/plugin.sh new/validate/list/index/test`（远程 operator/plugin.sh 的本地实现）。
-- C6 进行中：AGENTS 三层文件/opencode.json 已接入；TOOLS/e2e 已有；共享 FFI 模块移入 lib；剩 spectrum 与硬件 e2e/trace。
+- C6 进行中：AGENTS 三层文件/opencode.json 已接入；设备层统一注册/状态/租约/探活/事件；state/session/plugin context 落 kvcache；剩插件访问迁移、GUI 常驻 supervisor 与硬件 e2e/trace。
 - 可选：`lib/ffi/kv.lua` 绑定 `/opt/my_db_src/include/cache.h`。
 
 ### C6 清理

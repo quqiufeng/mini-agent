@@ -4,6 +4,7 @@
 # @rule 手机汽水音乐 → 手机截图；电视操作 → 电视 adb 截图；VLC/NAS 播放 → VLC 窗口截图
 set -uo pipefail
 OUT="${1:-/tmp/myagent_preview.png}"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
@@ -28,7 +29,9 @@ if [ -n "${vw:-}" ] && [ "${vw:-0}" -gt 100 ]; then
 fi
 
 # 3) 电视（醒着且 adb 可达）
-TV="${TV_SERIAL:-192.168.1.110:5555}"
+_tv=$("$ROOT/tools/device.sh" ip tv 2>/dev/null || true)
+TV="${TV_SERIAL:-${_tv:+$_tv:5555}}"
+TV="${TV:-192.168.1.110:5555}"
 if adb -s "$TV" shell 'dumpsys power | grep -m1 mWakefulness' 2>/dev/null | grep -q Awake; then
     adb -s "$TV" exec-out screencap -p > "$OUT.tmp" 2>/dev/null
     if [ -s "$OUT.tmp" ] && [ "$(stat -c%s "$OUT.tmp")" -gt 1000 ]; then mv "$OUT.tmp" "$OUT"; echo "tv"; exit 0; fi

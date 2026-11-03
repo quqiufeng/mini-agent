@@ -7,7 +7,10 @@
 #        plugins/tv/tv_on.sh --input tv      # 回 Android 首页
 # @rule 用户说“打开电视/开电视”→ plugins/tv/tv_on.sh；说“切回 HDMI3”→ plugins/tv/tv_on.sh --input hdmi3
 set -uo pipefail
-SERIAL="${TV_SERIAL:-192.168.1.110:5555}"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+_tv=$("$ROOT/tools/device.sh" ip tv 2>/dev/null || true)
+SERIAL="${TV_SERIAL:-${_tv:+$_tv:5555}}"
+SERIAL="${SERIAL:-192.168.1.110:5555}"
 ADB=(adb -s "$SERIAL")
 
 "${ADB[@]}" connect "$SERIAL" >/dev/null 2>&1 || true

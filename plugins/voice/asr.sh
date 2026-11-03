@@ -3,6 +3,10 @@
 # @usage plugins/voice/asr.sh <本地音频文件>
 # @rule 本机有 /opt/SenseVoice.cpp/bin/sense-voice-main + 模型时完全本地；任意采样率/24bit 先用 ffmpeg 转 16k 单声道
 set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$DIR/../.." && pwd)"
+_host=$("$ROOT/tools/device.sh" ip computer 2>/dev/null || true)
+HOST="${REMOTE_HOST:-quqiufeng@${_host:-192.168.1.10}}"
 
 [ $# -eq 1 ] || { echo "用法: $0 <本地音频文件>" >&2; exit 2; }
 SRC="$1"
@@ -43,7 +47,7 @@ if [ "${ASR_LOCAL:-1}" != "0" ] && [ -x "$SV_BIN" ] && [ -r "$SV_MODEL" ]; then
 fi
 
 # ── 远程回退 ────────────────────────────────────────────────
-HOST="${REMOTE_HOST:-quqiufeng@192.168.1.10}"
+HOST="${REMOTE_HOST:-quqiufeng@${_host:-192.168.1.10}}"
 LANG_Q="$(printf '%q' "$LANG")"
 
 BASE="myagent-asr-$(date +%s)-$$"

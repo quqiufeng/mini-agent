@@ -28,5 +28,11 @@
     "关闭": [
       "stop"
     ]
+  },
+  "context": {
+    "libs": [
+      "scrcpy"
+    ],
+    "layout": "three-column"
   }
 }

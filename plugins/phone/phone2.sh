@@ -4,7 +4,8 @@
 # @rule 无线调试端口会变；默认手机 192.168.1.59，可用 PHONE2_IP 覆盖
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
-IP="${PHONE2_IP:-192.168.1.59}"
+_ip=$("$DIR/../../tools/device.sh" ip phone 2>/dev/null || true)
+IP="${PHONE2_IP:-${_ip:-192.168.1.59}}"
 CACHE=/tmp/myagent_phone2.serial
 
 mdns_port() {
