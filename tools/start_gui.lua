@@ -7,6 +7,7 @@ local core = require("core")
 local SESSION = os.getenv("AGENT_SESSION") or "local-my-agent"
 local PORT = os.getenv("AGENT_PORT") or "4097"
 local WORKDIR = os.getenv("AGENT_WORKDIR") or (DIR:match("^(.*)/tools$") or DIR)
+local BRAIN_ENV = "AGENT_BRAIN=1 OPENCODE_CONFIG=" .. WORKDIR .. "/opencode.json"
 local URL = "http://127.0.0.1:" .. PORT
 
 local function run(argv, timeout)
@@ -36,7 +37,7 @@ else
         os.exit(1)
     end
     run({ "tmux", "new-session", "-d", "-s", SESSION, "-n", "serve", "-c", WORKDIR,
-          "opencode serve --port " .. PORT }, 10)
+          "env " .. BRAIN_ENV .. " opencode serve --port " .. PORT }, 10)
     local ok = false
     for _ = 1, 50 do
         core.sleep(0.4)

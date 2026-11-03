@@ -3,9 +3,11 @@
 # @usage tools/dev_tui.sh start | type "<文本>" | stop | status
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+unset AGENT_BRAIN OPENCODE_CONFIG OPENCODE_CONFIG_CONTENT
 if [ -f "$ROOT/operator/ports.env" ]; then set -a; . "$ROOT/operator/ports.env"; set +a; fi
 SESSION=dev-tui
 DEV_URL="${DEV_URL:-http://127.0.0.1:4098}"
+
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
 
@@ -48,10 +50,17 @@ activate_win() {
       d:show(w); d:activate(w)' "$wid"
 }
 
-resize_win() {
+place_win() {
     local wid="$1"
     [ -n "$wid" ] || return 0
-    DISPLAY="${DISPLAY:-:0}" "$ROOT/plugins/system/win_resize.sh" "$wid" 1000 650 460 200 >/dev/null 2>&1 || true
+    "$ROOT/tools/lua.sh" -e '
+      package.path="'"$ROOT"'/tools/?.lua;"..package.path
+      local Xdo=require("xdo"); local d=Xdo.new(os.getenv("DISPLAY"))
+      local w=tonumber(arg[1]); if not w then os.exit(1) end
+      local sw = d:display_size()
+      local ww, hh = 970, 894
+      d:unmaximize_resize(w, sw - ww - 43, 61, ww, hh)
+      d:set_above(w, true); d:raise(w)' "$wid"
 }
 
 start() {
@@ -64,7 +73,7 @@ start() {
         local wid; wid=$(find_tui_win)
         if [ -n "$wid" ]; then
             echo "复用已有 TUI 窗口 $wid"
-            resize_win "$wid"
+            place_win "$wid"
             activate_win "$wid"
             return 0
         fi
@@ -79,7 +88,7 @@ start() {
         sleep 2
     fi
     local wid2; wid2=$(find_tui_win)
-    resize_win "$wid2"
+    place_win "$wid2"
     activate_win "$wid2"
     for _ in $(seq 1 20); do
         tmux capture-pane -p -t "$SESSION" 2>/dev/null | grep -q . && break
@@ -104,6 +113,9 @@ case "${1:-}" in
             start
             tgt=$(tui_target)
             tmux send-keys -t "$tgt" -l "$t"; sleep 0.2; tmux send-keys -t "$tgt" Enter
+            sleep 0.3
+            wid2=$(find_tui_win)
+            if [ -n "$wid2" ]; then place_win "$wid2"; activate_win "$wid2"; fi
         else
             wid=$(find_tui_win)
             if [ -z "$wid" ]; then
@@ -112,6 +124,8 @@ case "${1:-}" in
             fi
             [ -n "$wid" ] || { echo "[dev_tui] 没有可用 TUI" >&2; exit 1; }
             paste_win "$wid" "$t"
+            sleep 0.3
+            place_win "$wid"; activate_win "$wid"
         fi
         echo "已输入 dev TUI: $t"
         ;;

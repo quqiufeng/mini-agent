@@ -8,7 +8,7 @@ tmux session: local-my-agent
 └─ window "tui":   opencode attach http://127.0.0.1:4097
 ```
 
-`opencode` 的工作目录固定为 `~/my-agent`，启动时会自动读取 `~/my-agent/AGENTS.md`，因此它知道本机/远程的能力和调用方式。
+大脑 `opencode` 的工作目录是 `~/my-agent/operator`（`AGENT_WORKDIR`），通过 `operator/opencode.json` 加载根 AGENTS 和权限规则；开发者 TUI 在 `~/my-agent`，默认宽权限。
 
 > 公式：交互入口（语音/文字/TUI）× 单脑（opencode :4097）× 白名单工具（`tools/*.sh`）× 自主开发测试（见下文与 `AGENTS.md` 5.4）。
 
@@ -235,7 +235,7 @@ plugins/system/ocr.sh /tmp/x.png
 
 ## 与 remote my-agent 的差异
 
-- 这是**最小大脑运行时**，不包含 remote 的 `operator/tools` 白名单、`guard.js`、语音/微信入口和心跳。
+- 这是**最小大脑运行时**；本地已实现 `operator/opencode.json` 白名单和根 `.opencode/plugin/guard.js`（仅 `AGENT_BRAIN=1` 时生效）。语音/微信入口和心跳仍走 remote。
 - 本地 opencode 的权限由 `~/.config/opencode/opencode.json` 决定，默认比 remote 宽；真正的重活仍应调用 `AGENTS.md` 里记录的远程能力。
 - 不要把 `~/.env`、Cookie、API Key、日志或临时 PID 提交进仓库。
 

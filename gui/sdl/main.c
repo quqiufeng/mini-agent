@@ -70,6 +70,7 @@ static int ack_should_play = 0;
 static char *run_capture(char *const argv[], int *rc_out);
 
 static SDL_Texture *preview_tex = NULL;
+static int preview_visible = 0;
 static time_t preview_mtime = 0;
 
 /* ---- embedded LuaJIT: window control and generic Lua runner ---- */
@@ -863,7 +864,7 @@ int main(int argc, char **argv) {
     unlink("/tmp/myagent_mirror.id");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
     if (chdir(ROOT) != 0) {}
-    SDL_Window *win = SDL_CreateWindow("ai助手", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_SHOWN | SDL_WINDOW_ALWAYS_ON_TOP);
+    SDL_Window *win = SDL_CreateWindow("ai助手", 80, 61, LW, H, SDL_WINDOW_SHOWN | SDL_WINDOW_ALWAYS_ON_TOP);
     {
         SDL_RWops *rw = SDL_RWFromConstMem(icon_png, icon_png_len);
         if (rw) {
@@ -896,6 +897,7 @@ int main(int argc, char **argv) {
     }
     pthread_t th; pthread_create(&th, NULL, worker, NULL); pthread_detach(th);
     ack_speak(0);
+    { char *pav[] = { "state.sh", "set", "ui.preview", "off", NULL }; run_quiet(ROOT "/tools/state.sh", pav); }
 
     int running = 1, recording = 0, quiet = 0, proc_pos = 0;
     int dragging = 0, drag_dx = 0, drag_dy = 0;
@@ -904,6 +906,7 @@ int main(int argc, char **argv) {
     SDL_Event e;
     SDL_Rect micbtn = { LW - 110, 96, 90, 30 };
     SDL_Rect pausebtn = { 40, H - 44, 130, 32 };
+    SDL_Rect bpreview = { 180, H - 44, 110, 32 };
     SDL_Rect bvoldown = { 40, H - 196, 196, 36 };
     SDL_Rect bvolup = { 244, H - 196, 196, 36 };
     SDL_Rect bprev = { 40, H - 150, 120, 36 };
@@ -921,7 +924,7 @@ int main(int argc, char **argv) {
                     last_move_tick = SDL_GetTicks();
                 } else if (e.window.event == SDL_WINDOWEVENT_MINIMIZED || e.window.event == SDL_WINDOWEVENT_HIDDEN) {
                     run_embedded_winctl("mirror-hide", NULL);
-                } else if (e.window.event == SDL_WINDOWEVENT_RESTORED || e.window.event == SDL_WINDOWEVENT_SHOWN) {
+                } else if ((e.window.event == SDL_WINDOWEVENT_RESTORED || e.window.event == SDL_WINDOWEVENT_SHOWN) && preview_visible) {
                     int wx = 0, wy = 0; SDL_GetWindowPosition(win, &wx, &wy);
                     run_embedded_winctl("mirror-show", NULL);
                     sync_scrcpy(wx, wy);
@@ -953,6 +956,20 @@ int main(int argc, char **argv) {
                 } else if (x >= micbtn.x && x <= micbtn.x + micbtn.w && y >= micbtn.y && y <= micbtn.y + micbtn.h) cycle_mic();
                 else if (x >= pausebtn.x && x <= pausebtn.x + pausebtn.w && y >= pausebtn.y && y <= pausebtn.y + pausebtn.h) {
                     paused = !paused; set_status(paused ? "已暂停" : (speaker_busy() ? "播放中 · 暂停监听" : "待唤醒"));
+                } else if (x >= bpreview.x && x <= bpreview.x + bpreview.w && y >= bpreview.y && y <= bpreview.y + bpreview.h) {
+                    preview_visible = !preview_visible;
+                    char *pav[] = { "state.sh", "set", "ui.preview", preview_visible ? "on" : "off", NULL };
+                    run_quiet(ROOT "/tools/state.sh", pav);
+                    SDL_SetWindowSize(win, preview_visible ? W : LW, H);
+                    if (preview_visible) {
+                        int wx = 0, wy = 0; SDL_GetWindowPosition(win, &wx, &wy);
+                        run_embedded_winctl("mirror-show", NULL);
+                        sync_scrcpy(wx, wy);
+                        set_status("预览显示");
+                    } else {
+                        run_embedded_winctl("mirror-hide", NULL);
+                        set_status("待唤醒");
+                    }
                 } else if (x >= bvoldown.x && x <= bvoldown.x + bvoldown.w && y >= bvoldown.y && y <= bvoldown.y + bvoldown.h) {
                     if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/plugins/system/volume.sh", "volume.sh", "down", (char *)NULL); _exit(1); }
                     set_status("音量 -");
@@ -1192,7 +1209,10 @@ int main(int argc, char **argv) {
         text(ren, small, buf, 48, H - 82, white);
         SDL_SetRenderDrawColor(ren, 48, 52, 60, 255); SDL_RenderFillRect(ren, &pausebtn);
         text(ren, small, paused ? "继续监听" : "暂停监听", pausebtn.x + 20, pausebtn.y + 5, green);
+        SDL_SetRenderDrawColor(ren, 60, 76, 100, 255); SDL_RenderFillRect(ren, &bpreview);
+        text(ren, small, preview_visible ? "隐藏预览" : "预览", bpreview.x + 26, bpreview.y + 5, white);
 
+        if (preview_visible) {
         // 右侧：当前应用截图预览
         SDL_Rect panel = { LW, 0, W - LW, H };
         SDL_SetRenderDrawColor(ren, 16, 18, 22, 255);
@@ -1223,6 +1243,7 @@ int main(int argc, char **argv) {
             SDL_RenderSetClipRect(ren, &panel);
             SDL_RenderCopy(ren, preview_tex, NULL, &dst);
             SDL_RenderSetClipRect(ren, NULL);
+        }
         }
         SDL_RenderPresent(ren);
         SDL_Delay(16);

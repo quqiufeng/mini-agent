@@ -35,7 +35,7 @@ case "${1:-start}" in
         ;;
     status)
         if running; then
-            echo "running pid=$(cat "$PIDFILE") $(cat "$STATE" 2>/dev/null || echo "no-state")"
+            echo "running pid=$(cat "$PIDFILE") $("$DIR/state.sh" get speaker 2>/dev/null || echo "no-state")"
         else
             echo "stopped"
         fi

@@ -277,6 +277,25 @@ end
 function Xdo:display_size()
     return tonumber(X11.XDisplayWidth(self.dpy, 0)), tonumber(X11.XDisplayHeight(self.dpy, 0))
 end
+function Xdo:set_above(win, on)
+    local root = X11.XDefaultRootWindow(self.dpy)
+    local atom = X11.XInternAtom(self.dpy, "_NET_WM_STATE", 0)
+    local above = X11.XInternAtom(self.dpy, "_NET_WM_STATE_ABOVE", 0)
+    local ev = ffi.new("XEvent")
+    ev.xclient.type = 33
+    ev.xclient.serial = 0
+    ev.xclient.send_event = 1
+    ev.xclient.display = self.dpy
+    ev.xclient.window = win
+    ev.xclient.message_type = atom
+    ev.xclient.format = 32
+    ev.xclient.data.l[0] = on and 1 or 0
+    ev.xclient.data.l[1] = above
+    X11.XSendEvent(self.dpy, root, 0, 0x180000, ev)
+    X11.XFlush(self.dpy)
+    return true
+end
+
 function Xdo:key(win, seq, delay)
     return lib.xdo_send_keysequence_window(self.handle, win, seq, delay or 12000) == 0
 end

@@ -302,6 +302,12 @@ host.trace
 - 不写业务分支（如“手机在播还是 VLC 在播”）。
 - 不引入 Flutter/Web。
 
+### 9.2 当前应用预览
+
+- 默认隐藏，窗口宽度 = LW；点「预览」展开到 LW+PW。
+- `~/.myagent/state/ui.preview`（on/off）控制 scrcpy 镜像显示。
+- appshot 仍按需执行，展开时才渲染。
+
 ### 9.3 过渡
 
 - 现有 `gui/sdl/main.c` 保留。
@@ -387,7 +393,8 @@ host.trace
 - C3 已完成（结构）：media/phone/wechat/camera 实现移入 `plugins/`，`tools/` 为薄入口。
 - C4：voice/tv/system 实现已迁到 plugins（system 含 volume/alarm/netmap/search/chrome/ocr/win_resize）；spectrum 例外。
 - C5 完成：GUI 读新 state，媒体/音量走 entry；C 代码已去掉 `system()`。
-- 开发者 TUI 已切到独立 server（DEV_PORT=4098，tmux serve+tui），并优先恢复该目录上次 session。
+- 大脑 cwd `operator/`，权限由 `operator/opencode.json` + guard 限制；开发者 TUI cwd 项目根、独立 server 4098、宽权限。
+- 大脑新 session 的 directory 是 `operator`，开发 session 是项目根；TUI 各看各的。`dev_tui.sh` 清掉大脑环境变量，保持宽权限。
 - 自主开发插件：`tools/plugin.sh new/validate/list/index/test`（远程 operator/plugin.sh 的本地实现）。
 - C6 进行中：AGENTS 三层文件/opencode.json 已接入；TOOLS/e2e 已有；共享 FFI 模块移入 lib；剩 spectrum 与硬件 e2e/trace。
 - 可选：`lib/ffi/kv.lua` 绑定 `/opt/my_db_src/include/cache.h`。

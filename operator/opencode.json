@@ -1,0 +1,36 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "deepseek/deepseek-flash",
+  "instructions": ["AGENTS.md", "AGENTS.runtime.md", "AGENTS.plugins.md", "plugins/TOOLS.md"],
+  "permission": {
+    "*": "allow",
+    "read": {
+      "*": "deny",
+      "*.png": "allow",
+      "*.jpg": "allow",
+      "*.jpeg": "allow",
+      "*.webp": "allow",
+      "/tmp/*.png": "allow",
+      "/tmp/*.jpg": "allow",
+      "/tmp/*.jpeg": "allow",
+      "/tmp/*.webp": "allow"
+    },
+    "edit": "deny",
+    "glob": "deny",
+    "grep": "deny",
+    "list": "deny",
+    "task": "deny",
+    "webfetch": "deny",
+    "websearch": "deny",
+    "bash": {
+      "*": "deny",
+      "tools/*": "allow",
+      "./tools/*": "allow",
+      "plugins/*": "allow",
+      "./plugins/*": "allow",
+      "temp/*": "allow",
+      "./temp/*": "allow"
+    },
+    "external_directory": { "/tmp/**": "allow", "~/Pictures/**": "allow" }
+  }
+}

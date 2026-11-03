@@ -251,11 +251,12 @@ echo $! > /tmp/opencode/vlc.pid
 
 - 目录：`~/my-agent`
 - 启动：`./start.sh` —— tmux 起 `serve`/`tui`，再打开**一个专用 qterminal 窗口**显示 TUI（已有客户端不重复开窗）：
-  - tmux 窗口 `0:serve` → `opencode serve --port 4097`
-  - tmux 窗口 `1:tui` → `opencode attach http://127.0.0.1:4097`（TUI，默认停在这里）
+  - tmux 窗口 `0:serve` → `opencode serve --port 4097`（cwd `operator/`）
+  - tmux 窗口 `1:tui` → `opencode attach http://127.0.0.1:4097`（TUI，cwd `operator/`）
+- **大脑目录**：`operator/`（`start.sh` 设置 `AGENT_WORKDIR`）。`operator/opencode.json` 加载根 AGENTS（symlink）+ runtime/plugins 契约，并限制权限；`operator/tools`、`operator/plugins` 是根目录的 symlink。
+- **开发者 TUI 目录**：`~/my-agent`（项目根），不加载 operator 权限配置，默认宽权限；`DEV_PORT=4098`。`dev_tui.sh` 会清掉 `AGENT_BRAIN`/`OPENCODE_CONFIG`，避免从大脑继承限制。大脑新 session 的 directory 是 `operator`，开发 session 是项目根，TUI 各看各的。
 - tmux 窗口就是标签（状态栏 `0:serve 1:tui`），`Ctrl+B n/p` 切换；会话设了 `destroy-unattached`，关掉终端即销毁，不留后台。
 - 打字前脚本自动把 IBus 切到英文（否则 libpinyin 会把 ASCII 转成中文），结束后还原。
-- 工作目录固定为 `~/my-agent`，因此 opencode 会自动读取 `~/my-agent/AGENTS.md`。
 - 发送消息：`./send.sh "现在几点"`（POST `/tui/append-prompt` + `/tui/submit-prompt`）
 - 状态/停止：`./status.sh`（health + 进程）/ `./stop.sh`
 
@@ -270,14 +271,16 @@ echo $! > /tmp/opencode/vlc.pid
 - 语音回复默认开启：`start.sh`/`gui/launch.sh` 会拉起 `plugins/voice/speak_watch.sh`（LuaJIT FFI + libcurl/libjson-c，单实例），把大脑完成的回复用本地 Kokoro 念出来；`VOICE_SPEAK_REPLY=0` 关闭。全局 TTS 播放期间会用 `/tmp/myagent_tts.playing` 暂停麦克风，避免自唤醒。
 - 界面右上角常驻「当前模式」徽标：待唤醒 / 已唤醒 Ns / 开发模式 Ns / 播放中 · 暂停监听 / 暂停监听，开发模式按指令续期并实时倒计时。
 - 小音箱占用由常驻 `tools/speaker_watch.sh` 维护（`/tmp/myagent_speaker.state`）：VLC、手机音乐、TTS、闹钟等一出声就暂停 ASR/唤醒词，声音结束（sink 空闲）自动恢复监听。
-- 右侧「当前应用」预览：**执行指令后**（2/6/12 秒）调 `plugins/system/appshot.sh` 抓取，优先级 手机汽水音乐 → 本机 VLC → 电视（adb 截图），缩放到 480×640 面板；不再周期抓取。
+- 右侧「当前应用」预览：**默认隐藏**（窗口 480 宽），点「预览」展开/收起；`ui.preview=on` 时 scrcpy 镜像显示，off 时隐藏。执行指令后（2/6/12 秒）调 `plugins/system/appshot.sh` 抓取。
 - **开发模式（简化）**：说「程序员」→ KWS 命中即执行 `tools/dev_tui.sh`，打开/置前独立终端 `cd ~/my-agent && env -u OPENCODE... opencode`；3 分钟窗口内（每条指令把倒计时重置为 180 秒）**所有语音文本**直接粘贴进该 TUI 并回车，绕过语音转发/工具规则；说「重置 / 重置倒计时 / 从0开始」只把倒计时恢复为 180 秒、不粘贴进 TUI；说「退出程序员」关闭；进入/退出时会用本地 TTS 语音提醒。
 
-### 5.1.2 能力与权限（靠 AGENTS.md）
+### 5.1.2 能力与权限（opencode 配置 + AGENTS 约定）
 
-- 不靠 `opencode.json`：权限与动作由本文档约定——大脑只调用**已实现的工具脚本** `tools/*.sh`，不临时拼 shell、不绕过工具。
-- 新增能力 = 新增 `tools/<name>.sh`（头部写 `@desc`/`@usage`），并在本文档登记；大脑启动时读取本文档。
-- 改 `AGENTS.md` 后需重启大脑（`./stop.sh && ./start.sh`）才生效。
+- 大脑 server 启动时注入 `AGENT_BRAIN=1 OPENCODE_CONFIG=operator/opencode.json`（`tools/start_gui.lua`）；权限默认 deny，bash 只放行 `tools/*`、`plugins/*`、`temp/*`，read 只放行图片，edit/glob/grep/list/task/webfetch/websearch 禁用。
+- 兜底插件在根 `.opencode/plugin/guard.js`，仅在 `AGENT_BRAIN=1` 时生效；禁止单条命令里的 `&&`、`;`、`|`、重定向和命令替换。开发者 TUI 不设该环境变量，保持宽权限。
+- 大脑仍只调用**已实现的工具脚本** `tools/*.sh` / `plugins/*`，不临时拼 shell；AGENTS 是行为约定，配置/guard 是强制边界。
+- 新增能力 = 新增 `tools/<name>.sh` 或 `plugins/<group>/entry/*.sh`（头部写 `@desc`/`@usage`），并在本文档登记；大脑启动时读取本文档。
+- 改 `AGENTS.md` 或权限配置后需重启大脑（`./stop.sh && ./start.sh`）才生效。
 
 ### 5.1.3 调试约定
 
@@ -382,4 +385,4 @@ echo $! > /tmp/opencode/vlc.pid
 - 本机不保留 Python 脚本：拼音用 ICU `uconv`（`plugins/voice/kws_keywords.sh`），构建期资源嵌入用 Lua（`gui/sdl/gen_embed.lua`）。如未来确实需要 Python 生态，先评估 C/FFI 方案。
 - 新增插件必须：`tools/list.sh` 可见 → 直接跑真实用例（含坏参数）→ 更新 `tools/README.md` 和本文件 5.3/5.4 → 重启大脑复测；返回码 0 不算通过。
 
-这是最小大脑运行时，不含远程的 `operator/tools` 白名单、`guard.js`、语音/微信入口；重活仍走远程。
+这是最小大脑运行时；本地已有 `operator/opencode.json` 白名单 + 根 `.opencode/plugin/guard.js`（仅大脑生效）。语音/微信入口和重活仍可走远程。

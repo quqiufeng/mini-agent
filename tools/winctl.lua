@@ -11,6 +11,15 @@ local d = assert(Xdo.new())
 local cmd = arg[1] or ""
 local MIRROR_ID = "/tmp/myagent_mirror.id"
 
+local function preview_on()
+    local home = os.getenv("HOME") or "/tmp"
+    local f = io.open(home .. "/.myagent/state/ui.preview", "r")
+    if not f then return false end
+    local s = f:read("*l") or ""
+    f:close()
+    return s:match("^on") ~= nil
+end
+
 local function find_win(pat)
     local w
     for _, x in ipairs(d:windows()) do
@@ -47,7 +56,10 @@ if cmd == "focus" then
 elseif cmd == "mirror-sync" then
     local g = find_win("ai助手")
     local m = mirror_win()
-    if g and m then d:move_window(m.id, g.geom.x + 480, g.geom.y) end
+    if g and m then
+        if preview_on() then d:move_window(m.id, g.geom.x + 480, g.geom.y)
+        else d:hide(m.id) end
+    end
 elseif cmd == "mirror-follow" then
     local lastx, lasty, lastw, lasth = -1, -1, -1, -1
     local miss = 0
@@ -59,6 +71,12 @@ elseif cmd == "mirror-follow" then
         if not g then g = find_win("ai助手") end
         local m = mirror_win()
         if g and m and g.geom then
+            if not preview_on() then
+                d:hide(m.id)
+                lastx, lasty, lastw, lasth = -2, -2, -2, -2
+                ffi.C.usleep(300000)
+                goto continue
+            end
             local x, y = g.geom.x + 480, g.geom.y
             local w, h = 405, 900
             if x ~= lastx or y ~= lasty or w ~= lastw or h ~= lasth then
@@ -70,6 +88,7 @@ elseif cmd == "mirror-follow" then
             miss = miss + 1
             if miss > 20 then break end
         end
+        ::continue::
         ffi.C.usleep(300000)
     end
 elseif cmd == "mirror-hide" then
@@ -78,6 +97,7 @@ elseif cmd == "mirror-hide" then
 elseif cmd == "mirror-show" then
     local m = mirror_win()
     if m then
+        if not preview_on() then d:hide(m.id); return end
         d:show(m.id)
         local g = find_win("ai助手")
         if g then d:move_window(m.id, g.geom.x + 480, g.geom.y) end

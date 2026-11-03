@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <time.h>
 
 static const char *MEDIA_BIN = "/home/quqiufeng/my-agent/tools/devctl.sh";
@@ -65,12 +66,12 @@ static bool open_cam(cv::VideoCapture &cap, const char *url) {
 }
 
 
-static int run_wait(const char *prog, char *const argv[]) {
+static int run_wait(const char *prog, const char *const argv[]) {
     pid_t p = fork();
     if (p == 0) {
         int fd = open("/dev/null", O_WRONLY);
         if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); }
-        execv(prog, argv);
+        execv(prog, const_cast<char *const *>(argv));
         _exit(127);
     }
     if (p < 0) return -1;
@@ -153,7 +154,7 @@ int main(int argc, char **argv) {
         double ref = bg_mean > 150 ? 150.0 : bg_mean;
         bool covered = (mean < 50) || (mean < ref * 0.55);
         if ((int)covered != last_cov) {
-            char *sav[] = { "state.sh", "set", "camera", covered ? "blocked" : "clear", NULL };
+            const char *sav[] = { "state.sh", "set", "camera", covered ? "blocked" : "clear", NULL };
             run_wait(STATE_BIN, sav);
             last_cov = covered ? 1 : 0;
         }
@@ -168,7 +169,7 @@ int main(int argc, char **argv) {
             logf("[camera_block] covered mean=%.0f bg=%.0f n=%d wall=%ld\n",
                  mean, bg_mean, covered_count, (long)time(NULL));
             if (covered_count >= 2 && t - covered_since >= 0.2) {
-                char *pav[] = { "devctl.sh", "pause", NULL };
+                const char *pav[] = { "devctl.sh", "pause", NULL };
                 logf("[camera_block] blocked -> pause wall=%ld\n", (long)time(NULL));
                 int rc = run_wait(MEDIA_BIN, pav);
                 logf("[camera_block] pause rc=%d\n", rc);
@@ -181,7 +182,7 @@ int main(int argc, char **argv) {
         usleep(200000);
     }
     logf("[camera_block] loop exit wall=%ld\n", (long)time(NULL));
-    { char *sav[] = { "state.sh", "set", "camera", "clear", NULL }; run_wait(STATE_BIN, sav); }
+    { const char *sav[] = { "state.sh", "set", "camera", "clear", NULL }; run_wait(STATE_BIN, sav); }
     g_stop = true;
     return 0;
 }
