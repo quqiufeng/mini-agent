@@ -59,7 +59,8 @@ place_win() {
       local w=tonumber(arg[1]); if not w then os.exit(1) end
       local sw = d:display_size()
       local ww, hh = 970, 894
-      d:unmaximize_resize(w, sw - ww - 43, 61, ww, hh)
+      local left = math.floor((sw - 480 - ww) / 2)
+      d:unmaximize_resize(w, left + 480, 61, ww, hh)
       d:set_above(w, true); d:raise(w)' "$wid"
 }
 

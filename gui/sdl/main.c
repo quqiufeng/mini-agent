@@ -28,7 +28,7 @@
 #define LW 480
 #define PW 405
 #define W (LW + PW)
-#define H 900
+#define H 894
 #ifndef MYAGENT_ROOT
 #define MYAGENT_ROOT "/home/quqiufeng/my-agent"
 #endif
@@ -72,6 +72,15 @@ static char *run_capture(char *const argv[], int *rc_out);
 static SDL_Texture *preview_tex = NULL;
 static int preview_visible = 0;
 static time_t preview_mtime = 0;
+
+static int app_left_x(void) {
+    SDL_DisplayMode dm;
+    if (SDL_GetDesktopDisplayMode(0, &dm) == 0) {
+        int x = (dm.w - (480 + 970)) / 2;
+        if (x > 0) return x;
+    }
+    return (1920 - (480 + 970)) / 2;
+}
 
 /* ---- embedded LuaJIT: window control and generic Lua runner ---- */
 static lua_State *g_lua = NULL;
@@ -864,7 +873,7 @@ int main(int argc, char **argv) {
     unlink("/tmp/myagent_mirror.id");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2");
     if (chdir(ROOT) != 0) {}
-    SDL_Window *win = SDL_CreateWindow("ai助手", 80, 61, LW, H, SDL_WINDOW_SHOWN | SDL_WINDOW_ALWAYS_ON_TOP);
+    SDL_Window *win = SDL_CreateWindow("ai助手", app_left_x(), 61, LW, H, SDL_WINDOW_SHOWN | SDL_WINDOW_ALWAYS_ON_TOP);
     {
         SDL_RWops *rw = SDL_RWFromConstMem(icon_png, icon_png_len);
         if (rw) {
@@ -960,7 +969,9 @@ int main(int argc, char **argv) {
                     preview_visible = !preview_visible;
                     char *pav[] = { "state.sh", "set", "ui.preview", preview_visible ? "on" : "off", NULL };
                     run_quiet(ROOT "/tools/state.sh", pav);
-                    SDL_SetWindowSize(win, preview_visible ? W : LW, H);
+                    int nw = preview_visible ? W : LW;
+                    SDL_SetWindowSize(win, nw, H);
+                    SDL_SetWindowPosition(win, app_left_x(), 61);
                     if (preview_visible) {
                         int wx = 0, wy = 0; SDL_GetWindowPosition(win, &wx, &wy);
                         run_embedded_winctl("mirror-show", NULL);

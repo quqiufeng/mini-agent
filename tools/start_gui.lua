@@ -3,6 +3,7 @@
 local DIR = (arg[0] or ""):match("^(.*)/") or "."
 local ROOT = DIR .. "/.."
 package.path = ROOT .. "/lib/?.lua;" .. package.path
+package.path = DIR .. "/?.lua;" .. package.path
 local core = require("core")
 local SESSION = os.getenv("AGENT_SESSION") or "local-my-agent"
 local PORT = os.getenv("AGENT_PORT") or "4097"
@@ -67,7 +68,17 @@ do
     local ok, out = run({ "xdotool", "search", "--name", "BRAIN TUI" }, 3)
     local id = ok and out and out:match("([0-9]+)%s*$") or nil
     if id then
-        run({ WORKDIR .. "/plugins/system/win_resize.sh", id, "1000", "650", "460", "200" }, 5)
+        local okx, Xdo = pcall(require, "xdo")
+        if okx then
+            local d = Xdo.new(os.getenv("DISPLAY"))
+            local w = tonumber(id)
+            if d and w then
+                local sw = d:display_size()
+                local left = math.floor((sw - 480 - 970) / 2)
+                d:unmaximize_resize(w, left + 480, 61, 970, 894)
+                d:set_above(w, false)
+            end
+        end
     end
 end
 
