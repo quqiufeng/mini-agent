@@ -11,4 +11,6 @@ fbank_lfr_cmvn_feature.json
 __pycache__/
 *.pyc
 tools/audio_level
-tools/camera_block
+tools/spectrum
+plugins/camera/camera_block
+lib/native/*.so

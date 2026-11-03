@@ -6,8 +6,8 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 srcs=$("$DIR/state.sh" any-playing 2>/dev/null || true)
 case " $srcs " in
-    *" media.vlc "*) "$DIR/media.sh" pause >/dev/null 2>&1 || true ;;
+    *" media.vlc "*) "$DIR/../plugins/media/media.sh" pause >/dev/null 2>&1 || true ;;
 esac
 case " $srcs " in
-    *" media.phone "*) "$DIR/phone_music.sh" pause >/dev/null 2>&1 || true ;;
+    *" media.phone "*) "$DIR/../plugins/phone/music.sh" pause >/dev/null 2>&1 || true ;;
 esac

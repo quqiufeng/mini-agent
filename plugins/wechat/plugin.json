@@ -1,0 +1,32 @@
+{
+  "id": "wechat",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "type": "tool",
+  "entry": "entry/",
+  "capabilities": [
+    "wechat",
+    "mirror"
+  ],
+  "permissions": [
+    "adb",
+    "display"
+  ],
+  "dependencies": [
+    "lib.core",
+    "lib.state",
+    "lib.device"
+  ],
+  "intents": [
+    "微信",
+    "显示微信"
+  ],
+  "session_commands": {
+    "显示": [
+      "start"
+    ],
+    "关闭": [
+      "stop"
+    ]
+  }
+}

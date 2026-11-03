@@ -14,8 +14,6 @@ running() { [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
 
 write_state() {
     "$DIR/state.sh" set speaker "$1" 2>/dev/null || true
-    local tmp="$STATE.$$"
-    printf '%s %s\n' "$1" "$(date +%s)" > "$tmp" && mv -f "$tmp" "$STATE"
 }
 
 case "${1:-start}" in

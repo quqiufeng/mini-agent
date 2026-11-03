@@ -1,0 +1,1 @@
+{"id":"camera","version":"1.0.0","apiVersion":"1","type":"service","entry":"entry/","capabilities":["camera","block-detect"],"permissions":["camera","audio"],"dependencies":["lib.core","lib.state","lib.device"]}

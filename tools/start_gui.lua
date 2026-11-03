@@ -1,27 +1,28 @@
 #!/usr/bin/env luajit
 -- tools/start_gui.lua — 启动大脑：tmux(serve+tui) + 一个专用 qterminal 窗口显示 TUI
--- 已有客户端时装在原生窗口里就不再重复开窗；关窗即销毁会话。
 local DIR = (arg[0] or ""):match("^(.*)/") or "."
+local ROOT = DIR .. "/.."
+package.path = ROOT .. "/lib/?.lua;" .. package.path
+local core = require("core")
 local SESSION = os.getenv("AGENT_SESSION") or "local-my-agent"
 local PORT = os.getenv("AGENT_PORT") or "4097"
 local WORKDIR = os.getenv("AGENT_WORKDIR") or (DIR:match("^(.*)/tools$") or DIR)
 local URL = "http://127.0.0.1:" .. PORT
 
-local function q(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
-local function sh(cmd) return os.execute(cmd) == 0 end
-local function sleep(s) os.execute("sleep " .. s) end
-local function health() return sh("curl --max-time 1 -sf " .. q(URL .. "/global/health") .. " >/dev/null 2>&1") end
-local function has_session() return sh("tmux has-session -t " .. q(SESSION) .. " 2>/dev/null") end
-local function has_client()
-    local f = io.popen("tmux list-clients -t " .. q(SESSION) .. " 2>/dev/null")
-    local s = f and f:read("*a") or ""
-    if f then f:close() end
-    return #s > 0
+local function run(argv, timeout)
+    local out, _, rc = core.exec_argv(argv, { timeout = timeout or 10 })
+    return rc == 0, out
 end
-
+local function health() return run({ "/usr/bin/curl", "--max-time", "1", "-sf", URL .. "/global/health" }, 3) end
+local function has_session() return run({ "tmux", "has-session", "-t", SESSION }, 3) end
+local function has_client()
+    local ok, out = run({ "tmux", "list-clients", "-t", SESSION }, 3)
+    return ok and out and #out > 0
+end
 local function open_window()
-    return sh("env -u TMUX qterminal --workdir " .. q(WORKDIR) ..
-        " -e " .. q("tmux attach -t " .. SESSION .. ":tui") .. " >/dev/null 2>&1 &")
+    core.spawn_argv({ "/usr/bin/env", "-u", "TMUX", "qterminal", "--workdir", WORKDIR,
+                      "-e", "tmux attach -t " .. SESSION .. ":tui" },
+                    { log = "/tmp/myagent-start-gui.log" })
 end
 
 if has_session() then
@@ -34,39 +35,42 @@ else
         io.stderr:write("端口 " .. PORT .. " 已被其他进程占用\n")
         os.exit(1)
     end
-    sh("tmux new-session -d -s " .. SESSION .. " -n serve -c " .. q(WORKDIR) ..
-        " " .. q("opencode serve --port " .. PORT))
+    run({ "tmux", "new-session", "-d", "-s", SESSION, "-n", "serve", "-c", WORKDIR,
+          "opencode serve --port " .. PORT }, 10)
     local ok = false
     for _ = 1, 50 do
-        sleep("0.4")
+        core.sleep(0.4)
         if health() then ok = true; break end
     end
     if not ok then
         io.stderr:write("opencode serve 启动失败（端口 " .. PORT .. "）\n")
         os.exit(1)
     end
-    sh("tmux new-window -d -t " .. SESSION .. " -n tui -c " .. q(WORKDIR) ..
-        " " .. q("opencode attach " .. URL))
+    run({ "tmux", "new-window", "-d", "-t", SESSION, "-n", "tui", "-c", WORKDIR,
+          "opencode attach " .. URL }, 10)
 end
 
 if not has_client() then
     open_window()
-    sleep("2")
+    core.sleep(2)
 end
 
 if has_client() then
-    sh("tmux set-option -t " .. SESSION .. " destroy-unattached on 2>/dev/null")
-    sh("tmux set-option -t " .. SESSION .. " set-titles on 2>/dev/null")
-    sh("tmux set-option -t " .. SESSION .. " set-titles-string 'BRAIN TUI' 2>/dev/null")
+    run({ "tmux", "set-option", "-t", SESSION, "destroy-unattached", "on" })
+    run({ "tmux", "set-option", "-t", SESSION, "set-titles", "on" })
+    run({ "tmux", "set-option", "-t", SESSION, "set-titles-string", "BRAIN TUI" })
 end
 
 -- 大脑窗口不要最大化：开成 1000x650 的小窗
-sh("ID=$(DISPLAY=${DISPLAY:-:0} xdotool search --name 'BRAIN TUI' 2>/dev/null | tail -1); " ..
-   "if [ -n \"$ID\" ]; then DISPLAY=${DISPLAY:-:0} " ..
-   q(WORKDIR .. "/tools/win_resize.sh") .. " \"$ID\" 1000 650 460 200 >/dev/null 2>&1; fi")
+do
+    local ok, out = run({ "xdotool", "search", "--name", "BRAIN TUI" }, 3)
+    local id = ok and out and out:match("([0-9]+)%s*$") or nil
+    if id then
+        run({ WORKDIR .. "/plugins/system/win_resize.sh", id, "1000", "650", "460", "200" }, 5)
+    end
+end
 
--- 统一语音回复：默认开启（只念第一句）；VOICE_SPEAK_REPLY=0 关闭
-if sh("test \"${VOICE_SPEAK_REPLY:-1}\" != 0") == true then
-    sh("setsid nohup " .. q(WORKDIR .. "/tools/speak_watch.sh") ..
-        " >>/tmp/myagent-speak-watch.log 2>&1 </dev/null &")
+-- 统一语音回复：默认开启；VOICE_SPEAK_REPLY=0 关闭
+if (os.getenv("VOICE_SPEAK_REPLY") or "1") ~= "0" then
+    core.spawn_argv({ WORKDIR .. "/plugins/voice/speak_watch.sh" }, { log = "/tmp/myagent-speak-watch.log" })
 end

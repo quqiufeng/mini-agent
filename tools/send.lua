@@ -1,6 +1,6 @@
 -- send.lua — 把文本提交给本地大脑（LuaJIT FFI: libcurl）
 local DIR = (arg[0] or ""):match("^(.*)/") or "."
-package.path = DIR .. "/?.lua;" .. package.path
+package.path = DIR .. "/?.lua;" .. DIR .. "/../lib/?.lua;" .. package.path
 local http = require("http")
 
 local port = os.getenv("AGENT_PORT") or "4097"

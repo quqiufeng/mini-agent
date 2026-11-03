@@ -1,9 +1,9 @@
 #!/usr/bin/env luajit
--- @desc 过滤 tools/ocr.sh 的 JSON 文本框：field=区域文本(大写字母数字) / flat=全文去空白
--- @usage tools/ocr.sh img.png | tools/lua.sh tools/ocr_filter.lua field <x1> <y1> <x2> <y2>
---        tools/ocr.sh img.png | tools/lua.sh tools/ocr_filter.lua flat
+-- @desc 过滤 plugins/system/ocr.sh 的 JSON 文本框：field=区域文本(大写字母数字) / flat=全文去空白
+-- @usage plugins/system/ocr.sh img.png | tools/lua.sh tools/ocr_filter.lua field <x1> <y1> <x2> <y2>
+--        plugins/system/ocr.sh img.png | tools/lua.sh tools/ocr_filter.lua flat
 local DIR = (arg[0] or ""):match("^(.*)/") or "."
-package.path = DIR .. "/?.lua;" .. package.path
+package.path = DIR .. "/?.lua;" .. DIR .. "/../lib/?.lua;" .. package.path
 local J = require("jsonc")
 
 local mode = arg[1] or "flat"

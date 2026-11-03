@@ -6,7 +6,7 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
-"$DIR/tv_on.sh" --desktop
+"$DIR/../plugins/tv/tv_on.sh" --desktop
 setsid nohup "$HOME/.local/bin/open-mainpc-vnc.sh" >/tmp/myagent-remote-desktop.log 2>&1 &
 sleep 2
 echo "远程桌面已打开（HDMI3 + noVNC）"

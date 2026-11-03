@@ -14,4 +14,5 @@
 #   AGENT_PORT=4098 ./start.sh
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$DIR/operator/ports.env" ]; then set -a; . "$DIR/operator/ports.env"; set +a; fi
 exec "$DIR/tools/lua.sh" "$DIR/tools/start_gui.lua" "$@"

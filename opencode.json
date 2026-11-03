@@ -1,0 +1,8 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow",
+  "instructions": [
+    "operator/AGENTS.runtime.md",
+    "operator/AGENTS.plugins.md"
+  ]
+}

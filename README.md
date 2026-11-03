@@ -21,7 +21,7 @@ cd ~/my-agent
 ./start.sh --bg       # 只后台启动
 ./status.sh           # 查看 session / 窗口 / 4097 健康状态
 ./send.sh "现在几点"   # 通过 /tui 接口向大脑提交一条消息
-./tools/doctor.sh     # 检查依赖、大脑、远程、手机、Chrome
+./plugins/system/doctor.sh     # 检查依赖、大脑、远程、手机、Chrome
 ./tools/list.sh       # 列出本地工具
 ./stop.sh             # 停止
 ```
@@ -54,7 +54,7 @@ make -C gui/sdl          # 静态链 LuaJIT + SDL，KWS 链 /opt/sherpa-onnx；K
 ```
 
 构建后 `tools/lua.sh` 会优先用 `gui/sdl/myagent-voice --lua` 执行脚本，没有二进制时才退回系统 `luajit`。
-语音识别/合成优先本地：`tools/asr.sh` 用 SenseVoice.cpp，`tools/tts.sh` 用 Kokoro；不可用时自动回退远程。
+语音识别/合成优先本地：`plugins/voice/asr.sh` 用 SenseVoice.cpp，`plugins/voice/tts.sh` 用 Kokoro；不可用时自动回退远程。
 二进制通过 `RUNPATH=$ORIGIN/../lib` 优先加载 `gui/lib/libxdo.so.3`。
 
 ## 本地语音模型（KWS / ASR / TTS）
@@ -131,15 +131,15 @@ curl -L -o /opt/SenseVoice.cpp/models/sense-voice-small-q4_k.gguf \
 5) 生成唤醒词文件（修改唤醒词后需重新生成）：
 
 ```bash
-tools/kws_keywords.sh "你好星期五,程序员,退出程序员" > gui/kws/keywords.txt
+plugins/voice/kws_keywords.sh "你好星期五,程序员,退出程序员" > gui/kws/keywords.txt
 ```
 
 6) 构建并验证：
 
 ```bash
 make -C gui/sdl
-tools/asr.sh /tmp/test.wav                      # 本地 SenseVoice
-TTS_NOPLAY=1 tools/tts.sh "你好"                 # 本地 Kokoro
+plugins/voice/asr.sh /tmp/test.wav                      # 本地 SenseVoice
+TTS_NOPLAY=1 plugins/voice/tts.sh "你好"                 # 本地 Kokoro
 gui/launch.sh                                    # 说唤醒词测试 KWS
 ```
 
@@ -158,12 +158,12 @@ gui/launch.sh                                    # 说唤醒词测试 KWS
 | `make KWS=0` | 开启 | 关闭本地 KWS，退回文本唤醒 |
 
 说明：模型合计约 600 MB；SenseVoice 首次运行会在其工作目录写 `fbank_lfr_cmvn_feature.json`（已加入 `.gitignore`）；本机 i5-2400 上 ASR 约 1–2 秒，Kokoro 短句约 6–8 秒，唤醒应答会在后台预合成。
-语音回复默认开启，由 `tools/speak_watch.sh`（LuaJIT FFI）用本地 Kokoro 朗读助手回复；`VOICE_SPEAK_REPLY=0` 关闭。
+语音回复默认开启，由 `plugins/voice/speak_watch.sh`（LuaJIT FFI）用本地 Kokoro 朗读助手回复；`VOICE_SPEAK_REPLY=0` 关闭。
 小音箱占用由常驻 `tools/speaker_watch.sh` 监测：VLC/手机音乐/TTS 一出声就自动暂停语音识别与唤醒词，声音结束自动恢复监听。
 
 ## 本地 OCR（PP-OCRv4）
 
-`tools/ocr.sh <图片>` 默认本机识别，失败回退远程；输出 JSON 文本框数组。
+`plugins/system/ocr.sh <图片>` 默认本机识别，失败回退远程；输出 JSON 文本框数组。
 
 | 组件 | 默认路径 | 约 |
 |---|---|---|
@@ -209,7 +209,7 @@ sudo apt-get install -y libopencv-imgcodecs-dev
 4) 验证：
 
 ```bash
-tools/ocr.sh /tmp/x.png
+plugins/system/ocr.sh /tmp/x.png
 ```
 
 `OCR_LOCAL=0` 强制远程；`OCR_LIB` / `OCR_MODELS` / `OCR_ORT` 可覆盖路径。1080p 截图约 5–13 秒（i5-2400 CPU）；首次会尝试 CUDA 并自动回退 CPU，stderr 的 CUDA 警告可忽略。
@@ -223,13 +223,13 @@ tools/ocr.sh /tmp/x.png
 | `status.sh` | 查看运行状态和健康检查 |
 | `send.sh` | POST `/tui/append-prompt` + `/tui/submit-prompt` |
 | `tools/` | 本地能力层；每个能力一个 `*.sh`，头部有 `@desc`/`@usage` |
-| `tools/doctor.sh` | 只读检查依赖、本地大脑、远程、手机、Chrome CDP |
+| `plugins/system/doctor.sh` | 只读检查依赖、本地大脑、远程、手机、Chrome CDP |
 
 ## 自主开发与测试（本地闭环）
 
 - 新能力 = `tools/<name>.sh`（`@desc`/`@usage`/`@rule`）+ 实现；大脑只调 `tools/*`。
 - 改 GUI：`make -C gui/sdl`；改 `AGENTS.md`：`./stop.sh && ./start.sh`。
-- 自测要看真实结果：`scrot` + `read` 看图、`tools/ocr.sh` 回读、`tts.sh`→`record_mic.sh`→`asr.sh` 语音回环、`tools/doctor.sh` 健康检查；返回码 0 不算通过。
+- 自测要看真实结果：`scrot` + `read` 看图、`plugins/system/ocr.sh` 回读、`tts.sh`→`record_mic.sh`→`asr.sh` 语音回环、`plugins/system/doctor.sh` 健康检查；返回码 0 不算通过。
 - 证据（截图路径/OCR/日志）写进回复；新工具同步登记到 `tools/README.md` 和 `AGENTS.md` 5.3。
 - 详细约定见 `AGENTS.md` 5.4；完整模型见远程 `/opt/my-agent/automation.md`。
 

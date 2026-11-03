@@ -34,10 +34,10 @@
 #endif
 #define ROOT MYAGENT_ROOT
 #define FONT "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-#define ASR_BIN ROOT "/tools/asr.sh"
+#define ASR_BIN ROOT "/plugins/voice/asr.sh"
 #define SEND_BIN ROOT "/send.sh"
 #define TUI_BIN ROOT "/tools/dev_tui.sh"
-#define TTS_BIN ROOT "/tools/tts.sh"
+#define TTS_BIN ROOT "/plugins/voice/tts.sh"
 #define MEDIA_BIN ROOT "/tools/media_ctl.sh"
 #define VOLUME_BIN ROOT "/tools/volume_ctl.sh"
 #define ACK_WAV "/tmp/myagent_ack.wav"
@@ -166,6 +166,22 @@ static int run_lua_cli(int argc, char **argv) {
     return 0;
 }
 
+
+static int run_quiet(const char *prog, char *const argv[]) {
+    pid_t p = fork();
+    if (p == 0) {
+        int fd = open("/dev/null", O_WRONLY);
+        if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); }
+        execv(prog, argv);
+        _exit(127);
+    }
+    if (p < 0) return -1;
+    int st = 0;
+    waitpid(p, &st, 0);
+    if (!WIFEXITED(st)) return -1;
+    return WEXITSTATUS(st);
+}
+
 static void *preview_after_cmd(void *arg) {
     (void)arg;
     int delays[] = { 2, 6, 12 };
@@ -174,8 +190,8 @@ static void *preview_after_cmd(void *arg) {
         struct timespec ts = { delays[i] - prev, 0 };
         nanosleep(&ts, NULL);
         prev = delays[i];
-        int r = system(ROOT "/tools/appshot.sh >/dev/null 2>&1");
-        (void)r;
+        char *av[] = { "appshot.sh", NULL };
+        run_quiet(ROOT "/plugins/system/appshot.sh", av);
     }
     return NULL;
 }
@@ -184,8 +200,8 @@ static void *preview_once(void *arg) {
     (void)arg;
     struct timespec ts = { 1, 0 };
     nanosleep(&ts, NULL);
-    int r = system(ROOT "/tools/appshot.sh >/dev/null 2>&1");
-    (void)r;
+    char *av[] = { "appshot.sh", NULL };
+    run_quiet(ROOT "/plugins/system/appshot.sh", av);
     return NULL;
 }
 
@@ -222,10 +238,12 @@ static int tts_playing(void) {
     return access("/tmp/myagent_tts.playing", F_OK) == 0;
 }
 
-// 小音箱常驻监视进程（tools/speaker_watch.sh）维护 /tmp/myagent_speaker.state：
+// 小音箱常驻监视进程（tools/speaker_watch.sh）维护 ~/.myagent/state/speaker：
 // busy <ts> 表示小音箱正在出声，语音入口暂停监听；空闲后自动恢复。
 static int speaker_busy(void) {
-    FILE *f = fopen("/tmp/myagent_state/speaker", "r");
+    char spath[256];
+    snprintf(spath, sizeof spath, "%s/.myagent/state/speaker", getenv("HOME") ? getenv("HOME") : "/tmp");
+    FILE *f = fopen(spath, "r");
     if (f) {
         char st[16] = "";
         long ts = 0;
@@ -237,15 +255,7 @@ static int speaker_busy(void) {
             return now >= ts && now - ts <= 3;
         }
     }
-    f = fopen("/tmp/myagent_speaker.state", "r");
-    if (!f) return 0;
-    char st[16] = "";
-    long ts = 0;
-    int n = fscanf(f, "%15s %ld", st, &ts);
-    fclose(f);
-    if (n != 2 || strcmp(st, "busy") != 0) return 0;
-    time_t now = time(NULL);
-    return now >= ts && now - ts <= 3;
+    return 0;
 }
 
 static void make_beep(void) {
@@ -602,7 +612,7 @@ static void *worker(void *arg) {
 
         set_status("识别中 …");
         if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: asr-start %s\n", path);
-        if (getenv("VOICE_DEBUG")) { char cp[256]; snprintf(cp, sizeof cp, "cp -f '%s' /tmp/myagent_last.wav", path); int _r = system(cp); (void)_r; }
+        if (getenv("VOICE_DEBUG")) { char *cav[] = { "cp", "-f", path, "/tmp/myagent_last.wav", NULL }; run_quiet("/bin/cp", cav); }
         char *argv[] = { "/usr/bin/timeout", "30", ASR_BIN, path, NULL };
         int rc = 0; char *out = run_capture(argv, &rc);
         char text[1024] = "";
@@ -617,7 +627,7 @@ static void *worker(void *arg) {
             if (last) snprintf(text, sizeof text, "%s", last);
             free(out);
         }
-        { char cp[256]; snprintf(cp, sizeof cp, "cp -f '%s' /tmp/myagent_last_asr.wav", path); int _r = system(cp); (void)_r; }
+        { char *cav[] = { "cp", "-f", path, "/tmp/myagent_last_asr.wav", NULL }; run_quiet("/bin/cp", cav); }
         unlink(path);
         if (getenv("VOICE_DEBUG")) fprintf(stderr, "[gui] w: asr-done rc=%d text=%s\n", rc, text);
         char norm[1024]; normalize(text, norm, sizeof norm);
@@ -625,8 +635,8 @@ static void *worker(void *arg) {
         // asr.sh 有时识别出文字但退出码非 0，有文字就继续处理
         if (!*norm) { set_status(active_until > now_s() ? "已唤醒 · 在听" : "待唤醒"); continue; }
         if (garble_text(norm)) {
-            int _r = system("cp -f /tmp/myagent_last_asr.wav /tmp/myagent_garble.wav");
-            (void)_r;
+            { char *cav[] = { "cp", "-f", "/tmp/myagent_last_asr.wav", "/tmp/myagent_garble.wav", NULL };
+              run_quiet("/bin/cp", cav); }
             fprintf(stderr, "[gui] drop garble: %s (saved /tmp/myagent_garble.wav)\n", text);
             set_status("忽略无效语音");
             continue;
@@ -878,9 +888,11 @@ int main(int argc, char **argv) {
     open_capture();
     make_beep();
     // 大脑没起就先拉起来（start.sh 会开显式终端）
-    if (system("curl --max-time 1 -sf http://127.0.0.1:4097/global/health >/dev/null 2>&1") != 0) {
+    { char *cav[] = { "curl", "--max-time", "1", "-sf", "http://127.0.0.1:4097/global/health", NULL };
+      if (run_quiet("/usr/bin/curl", cav) != 0) {
         set_status("大脑启动中 …");
         if (fork() == 0) { execl(ROOT "/start.sh", "start.sh", NULL); _exit(1); }
+      }
     }
     pthread_t th; pthread_create(&th, NULL, worker, NULL); pthread_detach(th);
     ack_speak(0);
@@ -942,10 +954,10 @@ int main(int argc, char **argv) {
                 else if (x >= pausebtn.x && x <= pausebtn.x + pausebtn.w && y >= pausebtn.y && y <= pausebtn.y + pausebtn.h) {
                     paused = !paused; set_status(paused ? "已暂停" : (speaker_busy() ? "播放中 · 暂停监听" : "待唤醒"));
                 } else if (x >= bvoldown.x && x <= bvoldown.x + bvoldown.w && y >= bvoldown.y && y <= bvoldown.y + bvoldown.h) {
-                    if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/tools/volume.sh", "volume.sh", "down", (char *)NULL); _exit(1); }
+                    if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/plugins/system/volume.sh", "volume.sh", "down", (char *)NULL); _exit(1); }
                     set_status("音量 -");
                 } else if (x >= bvolup.x && x <= bvolup.x + bvolup.w && y >= bvolup.y && y <= bvolup.y + bvolup.h) {
-                    if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/tools/volume.sh", "volume.sh", "up", (char *)NULL); _exit(1); }
+                    if (fork() == 0) { setenv("VOLUME_NO_TV", "1", 1); execl(ROOT "/plugins/system/volume.sh", "volume.sh", "up", (char *)NULL); _exit(1); }
                     set_status("音量 +");
                 } else if (x >= bprev.x && x <= bprev.x + bprev.w && y >= bprev.y && y <= bprev.y + bprev.h) {
                     if (fork() == 0) { execl(ROOT "/tools/media_ctl.sh", "media_ctl.sh", "prev", (char *)NULL); _exit(1); }

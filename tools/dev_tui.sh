@@ -3,7 +3,9 @@
 # @usage tools/dev_tui.sh start | type "<文本>" | stop | status
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$ROOT/operator/ports.env" ]; then set -a; . "$ROOT/operator/ports.env"; set +a; fi
 SESSION=dev-tui
+DEV_URL="${DEV_URL:-http://127.0.0.1:4098}"
 export DISPLAY="${DISPLAY:-:0}"
 export XAUTHORITY="${XAUTHORITY:-/tmp/xauth_pLarOv}"
 
@@ -13,7 +15,7 @@ has() { tmux has-session -t "$SESSION" 2>/dev/null; }
 find_tui_win() {
     "$ROOT/tools/lua.sh" -e '
       package.path="'"$ROOT"'/tools/?.lua;"..package.path
-      local Xdo=require("xdo"); local d=assert(Xdo.new())
+      local ffi=require("ffi"); local Xdo=require("xdo"); local d=assert(Xdo.new())
       for _,w in ipairs(d:windows()) do
         local n=w.name or ""
         if n:find("DEV TUI",1,true) then print(tonumber(w.id)) return end
@@ -26,10 +28,10 @@ paste_win() {
     sleep 0.2
     "$ROOT/tools/lua.sh" -e '
       package.path="'"$ROOT"'/tools/?.lua;"..package.path
-      local Xdo=require("xdo"); local d=assert(Xdo.new())
+      local ffi=require("ffi"); local Xdo=require("xdo"); local d=assert(Xdo.new())
       local w=tonumber(arg[1]); if not w then os.exit(1) end
-      d:activate(w); os.execute("sleep 0.2")
-      d:key(w,"ctrl+shift+v"); os.execute("sleep 0.2"); d:key(w,"Return")' "$wid"
+      d:activate(w); ffi.C.usleep(200000)
+      d:key(w,"ctrl+shift+v"); ffi.C.usleep(200000); d:key(w,"Return")' "$wid"
 }
 
 activate_win() {
@@ -41,7 +43,7 @@ activate_win() {
     fi
     "$ROOT/tools/lua.sh" -e '
       package.path="'"$ROOT"'/tools/?.lua;"..package.path
-      local Xdo=require("xdo"); local d=assert(Xdo.new())
+      local ffi=require("ffi"); local Xdo=require("xdo"); local d=assert(Xdo.new())
       local w=tonumber(arg[1]); if not w then os.exit(1) end
       d:show(w); d:activate(w)' "$wid"
 }
@@ -49,7 +51,7 @@ activate_win() {
 resize_win() {
     local wid="$1"
     [ -n "$wid" ] || return 0
-    DISPLAY="${DISPLAY:-:0}" "$ROOT/tools/win_resize.sh" "$wid" 1000 650 460 200 >/dev/null 2>&1 || true
+    DISPLAY="${DISPLAY:-:0}" "$ROOT/plugins/system/win_resize.sh" "$wid" 1000 650 460 200 >/dev/null 2>&1 || true
 }
 
 start() {
@@ -67,7 +69,10 @@ start() {
             return 0
         fi
         tmux new-session -d -s "$SESSION" -c "$ROOT" \
-            "env -u OPENCODE -u OPENCODE_PID -u OPENCODE_SERVER opencode"
+            "opencode serve --port ${DEV_PORT:-4098}"
+        tmux new-window -d -t "$SESSION" -n tui -c "$ROOT" \
+            "opencode attach ${DEV_URL} --dir $ROOT --continue"
+        tmux select-window -t "$SESSION:tui"
         tmux set-option -t "$SESSION" set-titles on
         tmux set-option -t "$SESSION" set-titles-string "DEV TUI"
         env -u TMUX setsid qterminal --workdir "$ROOT" -e "tmux attach -t $SESSION" >/dev/null 2>&1 &
@@ -83,13 +88,22 @@ start() {
     sleep 1
 }
 
+tui_target() {
+    if tmux list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null | grep -qx tui; then
+        echo "$SESSION:tui"
+    else
+        echo "$SESSION"
+    fi
+}
+
 case "${1:-}" in
     start) start ;;
     type)
         t="${2:-}"; [ -n "$t" ] || exit 2
         if has; then
             start
-            tmux send-keys -t "$SESSION" -l "$t"; sleep 0.2; tmux send-keys -t "$SESSION" Enter
+            tgt=$(tui_target)
+            tmux send-keys -t "$tgt" -l "$t"; sleep 0.2; tmux send-keys -t "$tgt" Enter
         else
             wid=$(find_tui_win)
             if [ -z "$wid" ]; then

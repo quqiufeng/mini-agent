@@ -69,7 +69,7 @@ fi
 
 if [ ! -s "$ROOT/gui/kws/keywords.txt" ]; then
     mkdir -p "$ROOT/gui/kws"
-    "$ROOT/tools/kws_keywords.sh" "你好星期五,程序员,退出程序员" \
+    "$ROOT/plugins/voice/kws_keywords.sh" "你好星期五,程序员,退出程序员" \
         > "$ROOT/gui/kws/keywords.txt"
 fi
 

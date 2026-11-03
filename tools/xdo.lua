@@ -261,7 +261,7 @@ function Xdo:click_current(button, repeat_count, delay_ms)
         self:mouse_down(button)
         self:mouse_up(button)
         if i < repeat_count and delay_ms and delay_ms > 0 then
-            os.execute("sleep " .. string.format("%.3f", delay_ms / 1000))
+            require("ffi").C.usleep(math.floor(delay_ms * 1000))
         end
     end
     return true

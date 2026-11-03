@@ -1,0 +1,44 @@
+{
+  "id": "phone",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "type": "tool",
+  "entry": "entry/",
+  "capabilities": [
+    "phone",
+    "scrcpy",
+    "music"
+  ],
+  "permissions": [
+    "adb",
+    "audio",
+    "display"
+  ],
+  "dependencies": [
+    "lib.core",
+    "lib.state",
+    "lib.device"
+  ],
+  "intents": [
+    "手机音乐",
+    "汽水音乐",
+    "手机放歌"
+  ],
+  "session_commands": {
+    "上一首": [
+      "prev"
+    ],
+    "下一首": [
+      "next"
+    ],
+    "播放": [
+      "play"
+    ],
+    "暂停": [
+      "pause"
+    ],
+    "停止投屏": [
+      "stop"
+    ]
+  }
+}
