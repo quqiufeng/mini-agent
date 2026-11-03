@@ -689,16 +689,16 @@ static void *worker(void *arg) {
         int woke = strip_wake(text, rest, sizeof rest);
         int kws_recent = (kws_ack_at > 0 && now_s() - kws_ack_at < 8.0);
 
-        // 开发模式（简化）：说「程序员」进入 3 分钟窗口；窗口内的话原样进 TUI
+        // 开发模式（简化）：说「程序员」进入 10 分钟窗口；窗口内的话原样进 TUI
         {
             static double dev_ms = 0;
-            if (dev_ms <= 0) { const char *v = getenv("VOICE_DEV_ACTIVE_MS"); dev_ms = v ? atof(v) : 180000; }
+            if (dev_ms <= 0) { const char *v = getenv("VOICE_DEV_ACTIVE_MS"); dev_ms = v ? atof(v) : 600000; }
             static const char *DEVL[] = {"开发者模式", "开发模式", "开发者"};
             static const char *LEAD[] = {"请", "帮我", "我要", "我想", "现在", "马上", "开始",
                                          "进入", "打开", "开启", "启动", "切换", "切到", "调到", "唤醒"};
             char cand[1024];
             snprintf(cand, sizeof cand, "%s", woke ? rest : norm);
-            // 开发模式内听到“重置/重置倒计时/科计师重置…”→ 倒计时恢复满 180 秒，不转发 TUI
+            // 开发模式内听到“重置/重置倒计时/科计师重置…”→ 倒计时恢复满 600 秒，不转发 TUI
             if (now_s() < dev_until) {
                 char nc0[256]; normalize(cand, nc0, sizeof nc0);
                 if (strstr(nc0, "重置") || strcmp(nc0, "重新计时") == 0 ||
@@ -748,7 +748,7 @@ static void *worker(void *arg) {
             }
             if (after) {
                 dev_until = now_s() + dev_ms / 1000.0;
-                speak_async("已进入开发者模式，三分钟");
+                speak_async("已进入开发者模式，十分钟");
                 if (*after) {
                     char line[1100]; snprintf(line, sizeof line, "开发: %s", after);
                     add_line(line);
@@ -1033,7 +1033,7 @@ int main(int argc, char **argv) {
         if (kws_dev_pending) {
             int entering = kws_dev_pending > 0;
             kws_dev_pending = 0;
-            double dev_ms = 180000;
+            double dev_ms = 600000;
             const char *dv = getenv("VOICE_DEV_ACTIVE_MS");
             if (dv) dev_ms = atof(dv);
             if (!entering) {
@@ -1047,7 +1047,7 @@ int main(int argc, char **argv) {
                 dev_until = now_s() + dev_ms / 1000.0;
                 dev_drop_next_seg = 1;
                 add_line("● 开发模式（本地）→ TUI");
-                speak_async("已进入开发者模式，三分钟");
+                speak_async("已进入开发者模式，十分钟");
                 char *sargv[] = { "/usr/bin/timeout", "20", TUI_BIN, "start", NULL };
                 int src = 0; char *sout = run_capture(sargv, &src); free(sout);
                 set_status(src == 0 ? "开发模式 · 请说指令" : "dev TUI 启动失败");
